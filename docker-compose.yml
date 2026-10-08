@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: dron-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: drones
+      POSTGRES_USER: dronix_user
+      POSTGRES_PASSWORD: dronix_password
+    ports:
+      - "15432:5432"
+    volumes:
+      - dron_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dronix_user -d drones"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dron_postgres_data:

@@ -1,0 +1,31 @@
+[Unit]
+Description=DRON Backend (FastAPI + MAVLink)
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Software_Dron_Limpio
+ExecStart=/home/pi/Software_Dron_Limpio/.venv/bin/python3 -m backend.run
+Restart=always
+RestartSec=5
+
+# Conexión con el Pixhawk (UART de la Pi). Alternativa USB: /dev/ttyACM0
+Environment=MAVLINK_DEVICE=/dev/serial0
+Environment=MAVLINK_BAUD=57600
+Environment=DB_URL=postgresql+psycopg2://dronix_user:CAMBIA_DB_PASSWORD@127.0.0.1:5432/drones
+
+# OBLIGATORIO en Pi 4 (Cortex-A72): evita crash-loop SIGILL de PyTorch/YOLO
+Environment=DRON_VISION_ENABLED=0
+Environment=CAMERA_ENABLED=0
+
+# Credenciales del admin inicial (cambiar tras el primer arranque)
+Environment=ADMIN_USERNAME=admin
+Environment=ADMIN_PASSWORD=CAMBIA_ADMIN_PASSWORD
+
+# WebSocket ping/pong (detectar conexiones muertas)
+Environment=WS_PING_INTERVAL=15
+Environment=WS_PING_TIMEOUT=10
+
+[Install]
+WantedBy=multi-user.target
