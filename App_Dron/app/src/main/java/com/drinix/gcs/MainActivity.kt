@@ -17,8 +17,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.drinix.gcs.data.model.AuthState
 import com.drinix.gcs.theme.DrinixTheme
 import com.drinix.gcs.ui.DroneViewModel
+import com.drinix.gcs.ui.auth.AuthLoadingScreen
+import com.drinix.gcs.ui.auth.LoginScreen
 import com.drinix.gcs.ui.navigation.AppNavHost
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -39,13 +42,8 @@ class MainActivity : ComponentActivity() {
                 // Solicitar permisos de ubicación y archivos al iniciar la app
                 val permissionLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestMultiplePermissions()
-                ) { result ->
-                    // Si concedieron ubicación, anclar la simulación cerca del usuario
-                    if (result.values.any { it }) alignMockToDeviceLocation(vm)
-                }
+                ) { }
                 LaunchedEffect(Unit) {
-                    // Si ya tenía permiso, alinear con la ubicación sin volver a pedir
-                    alignMockToDeviceLocation(vm)
                     val permissions = buildList {
                         add(Manifest.permission.ACCESS_FINE_LOCATION)
                         add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -71,26 +69,17 @@ class MainActivity : ComponentActivity() {
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
+
+                // Puerta de autenticación: sin sesión válida solo se ve el login.
+                val authState by vm.authState.collectAsState()
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppNavHost(viewModel = vm)
+                    when (authState) {
+                        AuthState.AUTHENTICATED -> AppNavHost(viewModel = vm)
+                        AuthState.LOADING -> AuthLoadingScreen()
+                        else -> LoginScreen(viewModel = vm)
+                    }
                 }
             }
         }
-    }
-
-    /** Ancla la telemetría simulada a la última ubicación conocida del dispositivo. */
-    @android.annotation.SuppressLint("MissingPermission")
-    private fun alignMockToDeviceLocation(vm: DroneViewModel) {
-        val fine = androidx.core.content.ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_FINE_LOCATION
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        val coarse = androidx.core.content.ContextCompat.checkSelfPermission(
-            this, Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (!fine && !coarse) return
-        com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
-            .lastLocation.addOnSuccessListener { loc ->
-                if (loc != null) vm.setMockBaseLocation(loc.latitude, loc.longitude)
-            }
     }
 }

@@ -1,6 +1,7 @@
 package com.drinix.gcs.di
 
 import com.drinix.gcs.data.SessionManager
+import com.drinix.gcs.data.network.AuthApi
 import com.drinix.gcs.data.network.AuthInterceptor
 import com.drinix.gcs.data.network.DroneApi
 import com.drinix.gcs.data.network.HostRewriteInterceptor
@@ -50,4 +51,9 @@ object AppModule {
     @Singleton
     fun provideDroneApi(retrofit: Retrofit): DroneApi =
         retrofit.create(DroneApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAuthApi(retrofit: Retrofit): AuthApi =
+        retrofit.create(AuthApi::class.java)
 }
