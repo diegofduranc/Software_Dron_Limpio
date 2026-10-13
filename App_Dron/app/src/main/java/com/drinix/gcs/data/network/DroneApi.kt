@@ -18,30 +18,27 @@ interface DroneApi {
     @GET("api/telemetry")
     suspend fun getTelemetry(): Response<Telemetry>
 
-    @POST("api/arm")
+    @POST("api/command/arm")
     suspend fun arm(@Body body: ArmRequest): Response<CommandResponse>
 
-    @POST("api/disarm")
-    suspend fun disarm(): Response<CommandResponse>
-
-    @POST("api/takeoff")
+    @POST("api/command/takeoff")
     suspend fun takeoff(@Body body: TakeoffRequest): Response<CommandResponse>
 
-    @POST("api/land")
+    @POST("api/command/land")
     suspend fun land(): Response<CommandResponse>
 
-    @POST("api/rtl")
+    @POST("api/command/rtl")
     suspend fun rtl(): Response<CommandResponse>
 
-    @POST("api/mode")
+    @POST("api/command/set_mode")
     suspend fun setMode(@Body body: SetModeRequest): Response<CommandResponse>
 
-    @POST("api/goto")
+    @POST("api/command/goto")
     suspend fun goto(@Body body: GotoRequest): Response<CommandResponse>
 
-    @POST("api/rc/control")
+    @POST("api/command/rc")
     suspend fun rc(@Body body: RcRequest): Response<CommandResponse>
 
-    @POST("api/nav/mission")
+    @POST("api/mission/upload")
     suspend fun uploadMission(@Body body: MissionUploadRequest): Response<CommandResponse>
 }

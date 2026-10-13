@@ -10,7 +10,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,8 +23,9 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
 /**
- * Gestiona el WebSocket de telemetría con reconexión automática
- * y soporte de Telemetría Simulada para pruebas locales sin servidor.
+ * Gestiona el WebSocket de telemetría con reconexión automática.
+ * No abre el socket si no hay token válido; ante 403/1008 cierra la sesión
+ * y deja de reintentar hasta que el usuario vuelva a autenticarse.
  */
 @Singleton
 class TelemetryRepository @Inject constructor(
@@ -43,22 +43,6 @@ class TelemetryRepository @Inject constructor(
     private var webSocket: WebSocket? = null
     private var reconnectAttempts = 0
     @Volatile private var shouldReconnect = false
-    private var mockJob: Job? = null
-
-    // Base de la telemetría simulada (por defecto Bogotá; se actualiza con la ubicación del dispositivo)
-    @Volatile private var mockBaseLat = 4.7110
-    @Volatile private var mockBaseLon = -74.0721
-
-    /** Reposiciona la telemetría simulada cerca de la ubicación del usuario. */
-    fun setMockBaseLocation(lat: Double, lon: Double) {
-        mockBaseLat = lat
-        mockBaseLon = lon
-        // Si la simulación está corriendo, reiniciarla en la nueva base
-        if (mockJob != null) {
-            stopMockTelemetry()
-            startMockTelemetry()
-        }
-    }
 
     private val _telemetry = MutableStateFlow<Telemetry?>(null)
     val telemetry: StateFlow<Telemetry?> = _telemetry.asStateFlow()
@@ -69,7 +53,6 @@ class TelemetryRepository @Inject constructor(
     private val listener = object : WebSocketListener() {
         override fun onOpen(ws: WebSocket, response: Response) {
             Log.d(TAG, "WS conectado")
-            stopMockTelemetry()
             reconnectAttempts = 0
             _connectionState.value = ConnectionState.CONNECTED
         }
@@ -91,20 +74,34 @@ class TelemetryRepository @Inject constructor(
         }
 
         override fun onClosed(ws: WebSocket, code: Int, reason: String) {
-            Log.d(TAG, "WS cerrado: $reason")
+            Log.d(TAG, "WS cerrado: $code $reason")
             _connectionState.value = ConnectionState.DISCONNECTED
-            scheduleReconnect()
+            if (code == WS_CODE_POLICY_VIOLATION) {
+                handleSessionExpired()
+            } else {
+                scheduleReconnect()
+            }
         }
 
         override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) {
-            Log.w(TAG, "WS fallo: ${t.message}")
+            Log.w(TAG, "WS fallo: ${t.message} (http=${response?.code})")
             _connectionState.value = ConnectionState.DISCONNECTED
-            startMockTelemetry()
+            if (response?.code == HTTP_FORBIDDEN) {
+                handleSessionExpired()
+            } else {
+                scheduleReconnect()
+            }
         }
     }
 
-    /** Conecta (o reconecta) el WebSocket. */
+    /** Conecta (o reconecta) el WebSocket. No hace nada sin un token válido. */
     fun connect() {
+        if (!session.isTokenValid()) {
+            Log.d(TAG, "connect() ignorado: sin token válido")
+            shouldReconnect = false
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
         shouldReconnect = true
         reconnectAttempts = 0
         openSocket()
@@ -113,21 +110,31 @@ class TelemetryRepository @Inject constructor(
     /** Cierra y desactiva la reconexión automática. */
     fun disconnect() {
         shouldReconnect = false
-        stopMockTelemetry()
         webSocket?.close(1000, "cierre manual")
         webSocket = null
         _connectionState.value = ConnectionState.DISCONNECTED
     }
 
     private fun openSocket() {
+        val url = session.wsTelemetryUrl()
+        if (url == null) {
+            Log.d(TAG, "openSocket() abortado: URL nula (sin token)")
+            shouldReconnect = false
+            _connectionState.value = ConnectionState.DISCONNECTED
+            return
+        }
         webSocket?.close(1000, "reconnect")
         _connectionState.value = ConnectionState.CONNECTING
-        val request = Request.Builder().url(session.wsTelemetryUrl()).build()
+        val request = Request.Builder().url(url).build()
         webSocket = client.newWebSocket(request, listener)
     }
 
     private fun scheduleReconnect() {
         if (!shouldReconnect) return
+        if (!session.isTokenValid()) {
+            handleSessionExpired()
+            return
+        }
         scope.launch {
             val backoffMs = minOf(30_000L, 1_000L shl reconnectAttempts.coerceAtMost(5))
             reconnectAttempts++
@@ -137,47 +144,17 @@ class TelemetryRepository @Inject constructor(
         }
     }
 
-    private fun startMockTelemetry() {
-        stopMockTelemetry()
-        mockJob = scope.launch {
-            _connectionState.value = ConnectionState.CONNECTED
-            var lat = mockBaseLat
-            var lon = mockBaseLon
-            var heading = 0.0
-            var battery = 92
-
-            while (shouldReconnect) {
-                // Rumbo cambia suavemente: el dron avanza con la ruta, sin girar en el sitio
-                heading = (heading + 2.0) % 360.0
-                lat += 0.00012 * Math.cos(Math.toRadians(heading))
-                lon += 0.00012 * Math.sin(Math.toRadians(heading))
-                if (battery > 15 && Math.random() < 0.05) battery--
-
-                _telemetry.value = Telemetry(
-                    voltage = 15.8,
-                    batteryRemaining = battery,
-                    mode = "LOITER",
-                    armed = true,
-                    lat = lat,
-                    lon = lon,
-                    alt = 12.5,
-                    satellites = 14,
-                    heading = heading,
-                    groundspeed = 3.2,
-                    seq = 1,
-                    fixType = 3,
-                )
-                delay(1000)
-            }
-        }
-    }
-
-    private fun stopMockTelemetry() {
-        mockJob?.cancel()
-        mockJob = null
+    /** El servidor rechazó la sesión: detener reintentos y avisar. */
+    private fun handleSessionExpired() {
+        shouldReconnect = false
+        webSocket = null
+        _connectionState.value = ConnectionState.DISCONNECTED
+        session.notifySessionExpired()
     }
 
     private companion object {
         const val TAG = "TelemetryRepo"
+        const val HTTP_FORBIDDEN = 403
+        const val WS_CODE_POLICY_VIOLATION = 1008
     }
 }

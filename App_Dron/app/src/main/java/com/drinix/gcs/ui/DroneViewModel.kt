@@ -2,11 +2,15 @@ package com.drinix.gcs.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.drinix.gcs.data.AuthRepository
 import com.drinix.gcs.data.CommandRepository
+import com.drinix.gcs.data.ConnectionValidator
 import com.drinix.gcs.data.SessionManager
 import com.drinix.gcs.data.SettingsRepository
 import com.drinix.gcs.data.TelemetryRepository
 import com.drinix.gcs.data.model.AlertSeverity
+import com.drinix.gcs.data.model.AuthResult
+import com.drinix.gcs.data.model.AuthState
 import com.drinix.gcs.data.model.CommandResult
 import com.drinix.gcs.data.model.ConnectionState
 import com.drinix.gcs.data.model.FlightAlert
@@ -38,10 +42,22 @@ class DroneViewModel @Inject constructor(
     private val commands: CommandRepository,
     private val settings: SettingsRepository,
     private val session: SessionManager,
+    private val auth: AuthRepository,
 ) : ViewModel() {
 
     val telemetry: StateFlow<Telemetry?> = telemetryRepo.telemetry
     val connectionState: StateFlow<ConnectionState> = telemetryRepo.connectionState
+
+    /** Estado de autenticación: decide si se muestra el login o la app. */
+    private val _authState = MutableStateFlow(AuthState.LOADING)
+    val authState: StateFlow<AuthState> = _authState.asStateFlow()
+
+    /** Mensaje de error/estado del login (nunca contiene la contraseña). */
+    private val _authMessage = MutableStateFlow<String?>(null)
+    val authMessage: StateFlow<String?> = _authMessage.asStateFlow()
+
+    private val _isAuthenticating = MutableStateFlow(false)
+    val isAuthenticating: StateFlow<Boolean> = _isAuthenticating.asStateFlow()
 
     /** Mensajes de resultado de comandos (para Snackbars). */
     private val _commandEvents = MutableSharedFlow<CommandResult>(extraBufferCapacity = 8)
@@ -71,8 +87,18 @@ class DroneViewModel @Inject constructor(
     private var wasConnected = false
 
     init {
-        // Conexión automática al iniciar la app (sin login).
-        telemetryRepo.connect()
+        // Solo conectar si ya hay una sesión válida guardada; nunca sin token.
+        if (session.isTokenValid()) {
+            _authState.value = AuthState.AUTHENTICATED
+            telemetryRepo.connect()
+        } else {
+            _authState.value = AuthState.UNAUTHENTICATED
+        }
+
+        // El servidor rechazó la sesión (401 REST o 403/1008 WS).
+        viewModelScope.launch {
+            session.sessionExpired.collect { handleSessionExpired() }
+        }
 
         // Procesar telemetría: recorrido, Home, distancia, alertas.
         viewModelScope.launch {
@@ -181,25 +207,69 @@ class DroneViewModel @Inject constructor(
 
     fun reconnect() = telemetryRepo.connect()
 
-    /** Reposiciona la telemetría simulada cerca del usuario (reinicia ruta y Home). */
-    fun setMockBaseLocation(lat: Double, lon: Double) {
-        _homePoint.value = null
-        _pathPoints.value = emptyList()
-        telemetryRepo.setMockBaseLocation(lat, lon)
+    // ---------- Autenticación ----------
+
+    /** Inicia sesión: valida datos, guarda host/puerto y token, y conecta el WS. */
+    fun login(host: String, port: Int, username: String, password: String) {
+        if (_isAuthenticating.value) return
+        val cleanHost = host.trim()
+        if (!ConnectionValidator.isValidHost(cleanHost)) {
+            _authMessage.value = "Host inválido"
+            return
+        }
+        if (!ConnectionValidator.isValidPort(port)) {
+            _authMessage.value = "Puerto inválido (1-65535)"
+            return
+        }
+        if (username.isBlank() || password.isEmpty()) {
+            _authMessage.value = "Usuario y contraseña obligatorios"
+            return
+        }
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            _authMessage.value = null
+            when (val result = auth.login(cleanHost, port, username, password)) {
+                is AuthResult.Success -> {
+                    _authState.value = AuthState.AUTHENTICATED
+                    _authMessage.value = null
+                    telemetryRepo.connect()
+                    _commandEvents.emit(CommandResult.Success("Sesión iniciada como ${result.username}"))
+                }
+                AuthResult.InvalidCredentials ->
+                    _authMessage.value = "Credenciales inválidas"
+                AuthResult.Unreachable ->
+                    _authMessage.value = "Servidor inalcanzable (timeout)"
+                is AuthResult.Unexpected ->
+                    _authMessage.value = "Respuesta inesperada del servidor"
+            }
+            _isAuthenticating.value = false
+        }
     }
 
-    /** Guardar host/puerto y reiniciar conexión WS. */
-    fun saveConnectionSettings(host: String, port: Int) {
+    /** Cierra sesión en el servidor (best-effort) y borra la sesión local. */
+    fun logout() {
         viewModelScope.launch {
-            settings.setHost(host.trim())
-            settings.setPort(port)
-            telemetryRepo.connect() // reconecta con la nueva URL
-            _commandEvents.emit(CommandResult.Success("Conexión reiniciada a $host:$port"))
+            telemetryRepo.disconnect()
+            auth.logout()
+            _authMessage.value = null
+            _authState.value = AuthState.UNAUTHENTICATED
+            _commandEvents.emit(CommandResult.Success("Sesión cerrada"))
+        }
+    }
+
+    private fun handleSessionExpired() {
+        viewModelScope.launch {
+            telemetryRepo.disconnect()
+            auth.clearLocalSession()
+            _authMessage.value = "Sesión caducada. Inicia sesión de nuevo."
+            _authState.value = AuthState.EXPIRED
         }
     }
 
     val hostFlow = settings.hostFlow
     val portFlow = settings.portFlow
+    val usernameFlow = settings.usernameFlow
+    val authExpiresAtFlow = settings.expiresAtFlow
     val keepScreenOnFlow = settings.keepScreenOnFlow
     val droneNameFlow = settings.droneNameFlow
     val savedMissions = settings.missionsFlow

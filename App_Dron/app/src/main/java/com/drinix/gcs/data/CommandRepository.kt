@@ -9,6 +9,8 @@ import com.drinix.gcs.data.model.SetModeRequest
 import com.drinix.gcs.data.model.TakeoffRequest
 import com.drinix.gcs.data.model.Waypoint
 import com.drinix.gcs.data.network.DroneApi
+import com.drinix.gcs.data.network.SessionExpiredException
+import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 import retrofit2.Response
@@ -18,11 +20,7 @@ class CommandRepository @Inject constructor(
     private val api: DroneApi,
 ) {
 
-    suspend fun sendArm(arm: Boolean) = if (arm) {
-        execute("ARM activado") { api.arm(ArmRequest(force = false)) }
-    } else {
-        execute("ARM desactivado") { api.disarm() }
-    }
+    suspend fun sendArm(arm: Boolean) = execute("ARM ${if (arm) "activado" else "desactivado"}") { api.arm(ArmRequest(arm)) }
     suspend fun sendTakeoff(altitude: Double) = execute("Despegue a $altitude m") { api.takeoff(TakeoffRequest(altitude)) }
     suspend fun sendLand() = execute("Aterrizaje iniciado") { api.land() }
     suspend fun sendRtl() = execute("RTL (Return to Launch)") { api.rtl() }
@@ -30,16 +28,7 @@ class CommandRepository @Inject constructor(
     suspend fun sendGoto(lat: Double, lon: Double, alt: Double) =
         execute("Volando a destino (%.5f, %.5f)".format(lat, lon)) { api.goto(GotoRequest(lat, lon, alt)) }
     suspend fun sendRc(roll: Int, pitch: Int, throttle: Int, yaw: Int) =
-        execute("RC enviado") {
-            api.rc(
-                RcRequest(
-                    roll = ((roll - 1500) / 500.0).coerceIn(-1.0, 1.0),
-                    pitch = ((pitch - 1500) / 500.0).coerceIn(-1.0, 1.0),
-                    throttle = ((throttle - 1000) / 1000.0).coerceIn(0.0, 1.0),
-                    yaw = ((yaw - 1500) / 500.0).coerceIn(-1.0, 1.0),
-                ),
-            )
-        }
+        execute("RC enviado") { api.rc(RcRequest(roll, pitch, throttle, yaw)) }
     suspend fun uploadMission(waypoints: List<Waypoint>) =
         execute("${waypoints.size} waypoints subidos") { api.uploadMission(MissionUploadRequest(waypoints)) }
 
@@ -52,11 +41,16 @@ class CommandRepository @Inject constructor(
             val body = resp.body()
             when {
                 resp.isSuccessful && body?.success == true -> CommandResult.Success(body.message)
-                body != null -> CommandResult.Error(body.message)
-                else -> CommandResult.Success("[Demo] $actionName")
+                body != null && body.message.isNotBlank() -> CommandResult.Error(body.message)
+                resp.isSuccessful -> CommandResult.Error("Respuesta inesperada del servidor")
+                else -> CommandResult.Error("Error del servidor (HTTP ${resp.code()})")
             }
+        } catch (e: SessionExpiredException) {
+            CommandResult.Error("Sesión caducada. Inicia sesión de nuevo.")
+        } catch (e: IOException) {
+            CommandResult.Error("Servidor inalcanzable (timeout)")
         } catch (e: Exception) {
-            CommandResult.Success("[Demo] $actionName")
+            CommandResult.Error("Respuesta inesperada del servidor")
         }
     }
 }

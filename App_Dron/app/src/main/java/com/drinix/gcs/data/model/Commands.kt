@@ -8,24 +8,24 @@ data class CommandResponse(
     @SerializedName("message") val message: String,
 )
 
-data class ArmRequest(@SerializedName("force") val force: Boolean)
+data class ArmRequest(@SerializedName("arm") val arm: Boolean)
 
 data class TakeoffRequest(@SerializedName("altitude") val altitude: Double)
 
 data class SetModeRequest(@SerializedName("mode") val mode: String)
 
 data class GotoRequest(
-    @SerializedName("latitude") val latitude: Double,
-    @SerializedName("longitude") val longitude: Double,
-    @SerializedName("altitude") val altitude: Double,
+    @SerializedName("lat") val lat: Double,
+    @SerializedName("lon") val lon: Double,
+    @SerializedName("alt") val alt: Double,
 )
 
 /** Override RC: valores PWM (centro 1500, rango 1000..2000). */
 data class RcRequest(
-    @SerializedName("roll") val roll: Double,
-    @SerializedName("pitch") val pitch: Double,
-    @SerializedName("throttle") val throttle: Double,
-    @SerializedName("yaw") val yaw: Double,
+    @SerializedName("roll") val roll: Int,
+    @SerializedName("pitch") val pitch: Int,
+    @SerializedName("throttle") val throttle: Int,
+    @SerializedName("yaw") val yaw: Int,
 )
 
 /** Waypoint de misión. */
@@ -38,6 +38,8 @@ data class Waypoint(
 
 data class MissionUploadRequest(
     @SerializedName("waypoints") val waypoints: List<Waypoint>,
+    @SerializedName("speed") val speed: Double? = null,
+    @SerializedName("closed") val closed: Boolean = false,
 )
 
 /** Misión guardada localmente por el usuario. */
