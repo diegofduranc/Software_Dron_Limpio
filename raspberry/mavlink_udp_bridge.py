@@ -5,8 +5,8 @@ Lee MAVLink del Pixhawk (serial) y lo reenvía al backend (UDP), y viceversa.
 Ejecutar en la Raspberry con:
     python3 mavlink_udp_bridge.py
 Variables de entorno:
-    MAVLINK_DEVICE   — puerto serial (default: /dev/ttyUSB0)
-    MAVLINK_BAUD     — baudrate    (default: 57600)
+    MAVLINK_DEVICE   — puerto serial (default: /dev/ttyACM0)
+    MAVLINK_BAUD     — baudrate    (default: 115200, USB directo)
     BACKEND_HOST     — IP del PC   (default: 10.252.200.181)
     BACKEND_PORT     — puerto UDP  (default: 14550)
     LOCAL_PORT       — puerto UDP local donde escucha (default: 14550)
@@ -23,8 +23,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-MAVLINK_DEVICE = os.getenv('MAVLINK_DEVICE', '/dev/ttyUSB0')
-MAVLINK_BAUD   = int(os.getenv('MAVLINK_BAUD', '57600'))
+MAVLINK_DEVICE = os.getenv('MAVLINK_DEVICE', '/dev/ttyACM0')
+MAVLINK_BAUD   = int(os.getenv('MAVLINK_BAUD', '115200'))
 BACKEND_HOST   = os.getenv('BACKEND_HOST', '10.252.200.181')
 BACKEND_PORT   = int(os.getenv('BACKEND_PORT', '14550'))
 LOCAL_PORT     = int(os.getenv('LOCAL_PORT', '14550'))

@@ -22,8 +22,8 @@ def main():
     logger.info('=' * 60)
     logger.info('Backend URL: %s', os.getenv('BACKEND_URL', 'http://127.0.0.1:8000'))
     logger.info('MAVLink:    %s @ %s baud',
-                os.getenv('MAVLINK_DEVICE', '/dev/ttyUSB0'),
-                os.getenv('MAVLINK_BAUD', '57600'))
+                os.getenv('MAVLINK_DEVICE', '/dev/ttyACM0'),
+                os.getenv('MAVLINK_BAUD', '115200'))
     logger.info('Intervalo:  %s s', os.getenv('SENSOR_INTERVAL', '0.1'))
     logger.info('=' * 60)
 

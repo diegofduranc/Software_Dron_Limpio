@@ -10,9 +10,11 @@ ExecStart=/home/pi/Software_Dron_Limpio/.venv/bin/python3 -m backend.run
 Restart=always
 RestartSec=5
 
-# Conexión con el Pixhawk (UART de la Pi). Alternativa USB: /dev/ttyACM0
-Environment=MAVLINK_DEVICE=/dev/serial0
-Environment=MAVLINK_BAUD=57600
+# Conexión con el Pixhawk por USB directo (/dev/ttyACM0 @ 115200).
+# Alternativa UART de la Pi: /dev/serial0 @ 57600
+# Para nombre persistente usa /dev/serial/by-id/usb-... (más estable que ttyACM0)
+Environment=MAVLINK_DEVICE=/dev/ttyACM0
+Environment=MAVLINK_BAUD=115200
 Environment=DB_URL=postgresql+psycopg2://dronix_user:CAMBIA_DB_PASSWORD@127.0.0.1:5432/drones
 
 # OBLIGATORIO en Pi 4 (Cortex-A72): evita crash-loop SIGILL de PyTorch/YOLO

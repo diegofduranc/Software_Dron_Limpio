@@ -28,8 +28,8 @@ if BACKEND_ROOT not in sys.path:
 
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://127.0.0.1:8000')
 SENSOR_INTERVAL = float(os.getenv('SENSOR_INTERVAL', '0.1'))  # 10 Hz
-MAVLINK_DEVICE = os.getenv('MAVLINK_DEVICE', '/dev/ttyUSB0')
-MAVLINK_BAUD = int(os.getenv('MAVLINK_BAUD', '57600'))
+MAVLINK_DEVICE = os.getenv('MAVLINK_DEVICE', '/dev/ttyACM0')
+MAVLINK_BAUD = int(os.getenv('MAVLINK_BAUD', '115200'))
 
 
 class DroneBridge:
@@ -76,15 +76,30 @@ class DroneBridge:
             logger.info('[BRIDGE] MAVLink modo SIM — sin conexión')
             self._mav = None
             return
-        # Verificar que el puerto existe antes de intentar (evita retrasos largos en Windows)
-        if not device.startswith('/') and ':' not in device:
-            logger.warning('[BRIDGE] MAVLink device inválido: %s — ignorando', device)
+
+        # Si MAVLINK_DEVICE no se fijó explícitamente, probar candidatos
+        # priorizando USB directo (ttyACM*) sobre radio de telemetría (ttyUSB*).
+        if os.getenv('MAVLINK_DEVICE'):
+            candidates = [device]
+        else:
+            candidates = ['/dev/ttyACM0', '/dev/ttyACM1', '/dev/ttyUSB0', '/dev/ttyUSB1', '/dev/ttyAMA0']
+
+        chosen = None
+        for cand in candidates:
+            if not cand.startswith('/'):
+                if ':' in cand:
+                    chosen = cand
+                break
+            if os.path.exists(cand):
+                chosen = cand
+                break
+
+        if chosen is None:
+            logger.warning('[BRIDGE] MAVLink device no encontrado (probados: %s) — ignorando', candidates)
             self._mav = None
             return
-        if device.startswith('/') and not os.path.exists(device):
-            logger.warning('[BRIDGE] MAVLink device %s no existe — ignorando', device)
-            self._mav = None
-            return
+        device = chosen
+
         try:
             from connection import MAVLinkConnection
             self._mav = MAVLinkConnection(device, MAVLINK_BAUD)

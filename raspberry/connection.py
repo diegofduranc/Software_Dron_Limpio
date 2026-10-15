@@ -19,8 +19,8 @@ class MAVLinkConnection:
         Inicializar conexión
         
         Args:
-            device: Puerto serial (/dev/ttyUSB0, /dev/ttyAMA0, etc)
-            baud: Baudrate (57600, 115200, etc)
+            device: Puerto serial (/dev/ttyACM0 USB directo, /dev/ttyUSB0 radio, etc)
+            baud: Baudrate (115200 USB directo, 57600 radio, etc)
         """
         self.device = device
         self.baud = baud

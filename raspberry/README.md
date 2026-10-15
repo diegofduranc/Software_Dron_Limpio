@@ -30,7 +30,9 @@ git clone <repo> .
 pip install -r requirements.txt
 
 # Ejecutar prueba (puedes configurar puerto/baud con variables de entorno)
-MAVLINK_DEVICE=/dev/ttyUSB0 MAVLINK_BAUD=57600 python3 main.py
+# USB directo al Pixhawk → /dev/ttyACM0 @ 115200
+# Radio de telemetría (SiK/3DR) → /dev/ttyUSB0 @ 57600
+MAVLINK_DEVICE=/dev/ttyACM0 MAVLINK_BAUD=115200 python3 main.py
 ```
 
 ## 📁 Estructura
@@ -48,8 +50,8 @@ raspberry/
 Edita `main.py` o usa variables de entorno:
 
 ```python
-# Por defecto usa /dev/ttyUSB0 y 57600, pero puedes exportar env vars:
-# MAVLINK_DEVICE and MAVLINK_BAUD
+# Por defecto usa /dev/ttyACM0 y 115200 (USB directo), pero puedes exportar env vars:
+# MAVLINK_DEVICE y MAVLINK_BAUD (ej. /dev/ttyUSB0 + 57600 para radio de telemetría)
 ```
 
 ### Detectar puerto en Raspberry
@@ -66,7 +68,7 @@ Busca `/dev/ttyUSB*` o `/dev/ttyAMA*`
 from connection import MAVLinkConnection
 
 # Conectar (mejor usar env vars para no editar el script)
-drone = MAVLinkConnection("/dev/ttyUSB0", 57600)
+drone = MAVLinkConnection("/dev/ttyACM0", 115200)
 
 # Verificar conexión
 if drone.is_connected():
