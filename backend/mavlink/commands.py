@@ -414,6 +414,35 @@ class DroneCommands:
             except Exception as e:
                 logger.warning(f"No se pudo aplicar velocidad de navegación: {e}")
 
+        # MAV_CMD_DO_REPOSITION devuelve COMMAND_ACK → permite confirmar recepción
+        acked = False
+        try:
+            with self.conn._lock:
+                master = self.conn.master
+                if not master:
+                    raise ConnectionError("No hay conexión con Pixhawk")
+                master.mav.command_long_send(
+                    master.target_system,
+                    master.target_component,
+                    mavutil.mavlink.MAV_CMD_DO_REPOSITION,
+                    0,
+                    float(self._nav_speed) if self._nav_speed else 0.0,  # param1 ground speed
+                    0,        # param2 bitmask
+                    0,        # param3 loiter radius
+                    0,        # param4 yaw (0 = mantener)
+                    float(lat), float(lon), float(alt),
+                )
+            acked = self._wait_ack_direct(mavutil.mavlink.MAV_CMD_DO_REPOSITION, timeout=5)
+        except ConnectionError as e:
+            logger.warning(f"GOTO rechazado o sin ACK: {e}")
+        except Exception as e:
+            logger.warning(f"DO_REPOSITION falló ({e}); usando setpoint directo")
+
+        if acked:
+            logger.info("✅ GOTO confirmado por autopiloto (ACK)")
+            return True
+
+        # Fallback: setpoint de posición directo (sin ACK, best-effort)
         with self.conn._lock:
             master = self.conn.master
             if not master:
@@ -432,7 +461,7 @@ class DroneCommands:
                 0, 0,
             )
 
-        logger.info("✅ Waypoint enviado")
+        logger.info("✅ Waypoint enviado (sin confirmación ACK)")
         return True
 
     def set_velocity(self, vx, vy, vz, yaw_rate=0):

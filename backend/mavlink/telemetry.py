@@ -289,6 +289,15 @@ class DroneTelemetry:
     
     }
 
+            elif msg_type == "GLOBAL_POSITION_INT":
+                # Complementa GPS_RAW_INT con la posición filtrada del EKF.
+                # No sobreescribe satellites/fix_type (solo GPS_RAW_INT los reporta).
+                if msg.lat != 0 or msg.lon != 0:
+                    self.data['gps']['lat'] = round(msg.lat / 1e7, 7)
+                    self.data['gps']['lon'] = round(msg.lon / 1e7, 7)
+                    self.data['gps']['alt'] = round(msg.relative_alt / 1000.0, 2)
+                    self.data['altitude'] = round(msg.relative_alt / 1000.0, 2)
+
             elif msg_type == "BATTERY_STATUS":
                 volts = msg.voltages[0]
                 # 65535 = no data

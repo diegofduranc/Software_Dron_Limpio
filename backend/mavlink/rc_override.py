@@ -40,6 +40,8 @@ class RCOverrideController:
     JOYSTICK_DEADBAND = 0.05  # valores |v| < 0.05 se tratan como 0
     DISARM_TIMEOUT = 10.0    # segundos sin conexión → empezar a reducir
     RAMP_DOWN_DURATION = 5.0  # segundos para reducir throttle de actual → 0
+    CONTROL_WATCHDOG = 2.0   # s sin comandos del cliente REST → centrar sticks
+    GUIDED_VEL_WATCHDOG = 1.0  # s sin comando de velocidad en GUIDED → hover
 
     def __init__(self, mavlink_connection):
         self.conn    = mavlink_connection
@@ -65,6 +67,12 @@ class RCOverrideController:
         self._disconnected_at: float | None = None
         self._disarmed_by_failsafe = False
         self._reconnect_callback = None  # opcional: se llama si failsafe había desarmado
+        # Watchdog de comandos REST (los clientes WS ya usan on_disconnect)
+        self._last_control_time: float | None = None
+        # Velocidad objetivo en GUIDED (vx, vy, vz, yaw_rate)
+        self._guided_vel = (0.0, 0.0, 0.0, 0.0)
+        self._guided_vel_time: float | None = None
+        self._released = False  # True → canales liberados (control al radio físico)
         logger.info("RCOverrideController inicializado")
 
     def start(self):
@@ -113,6 +121,14 @@ class RCOverrideController:
                     if abs(use_pitch) <= self.JOYSTICK_DEADBAND:  use_pitch = 0.0
                     if abs(use_yaw)   <= self.JOYSTICK_DEADBAND:  use_yaw = 0.0
 
+                    # ── Watchdog de comandos (clientes REST) ─────────────
+                    # Si el cliente REST deja de enviar comandos, centrar sticks
+                    # para no mantener indefinidamente el último valor.
+                    if (self._armed and self._last_control_time is not None
+                            and (time.time() - self._last_control_time) > self.CONTROL_WATCHDOG):
+                        use_throttle = 0.0
+                        use_yaw = use_pitch = use_roll = 0.0
+
                     # ── Sticks no forzados — el usuario controla roll/pitch/yaw ─
 
                 # ── Ramp-down por desconexin (fuera del lock) ────────────
@@ -153,8 +169,14 @@ class RCOverrideController:
                 # Los comandos de movimiento se envían como velocidades en este modo.
                 with self.lock:
                     in_guided = self._guided_mode
+                    guided_vel = self._guided_vel
+                    guided_vel_time = self._guided_vel_time
+                    is_armed_now = self._armed
+                    released = self._released
 
-                if in_guided:
+                if released:
+                    ch_roll = ch_pitch = ch_throttle = ch_yaw = 0
+                elif in_guided:
                     ch_roll = ch_pitch = ch_throttle = ch_yaw = 65535
                 else:
                     ch_roll     = self._to_pwm(use_roll)
@@ -197,6 +219,31 @@ class RCOverrideController:
                     else:
                         logger.debug('RC override: master None (intento #%d)', self._send_failures)
 
+                # ── GUIDED: stream continuo de velocidad a 10 Hz ─────────
+                # ArduCopter ignora RC_CHANNELS_OVERRIDE en GUIDED; se envía
+                # el objetivo de velocidad repetidamente (o hover si no hay
+                # comandos recientes) para que el autopiloto mantenga el movimiento.
+                if in_guided and not released and is_armed_now and master is not None:
+                    if guided_vel_time is None or (time.time() - guided_vel_time) > self.GUIDED_VEL_WATCHDOG:
+                        vx = vy = vz = yr = 0.0
+                    else:
+                        vx, vy, vz, yr = guided_vel
+                    try:
+                        with getattr(self.conn, '_lock', threading.Lock()):
+                            master.mav.set_position_target_local_ned_send(
+                                0,
+                                master.target_system,
+                                master.target_component,
+                                mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+                                int(0b0000111111000111),
+                                0, 0, 0,
+                                vx, vy, vz,
+                                0, 0, 0,
+                                0, yr,
+                            )
+                    except Exception as e:
+                        logger.warning('GUIDED velocity error: %s', e)
+
                 time.sleep(0.1)  # 10 Hz
 
             except Exception as e:
@@ -206,6 +253,8 @@ class RCOverrideController:
 
     def _release_control(self):
         """Libera el control RC (todos los canales a 0 = release)."""
+        with self.lock:
+            self._released = True
         try:
             master = self.conn.master
             if master:
@@ -238,18 +287,26 @@ class RCOverrideController:
     def set_throttle(self, value: float):
         with self.lock:
             self.throttle = max(0.0, min(1.0, float(value)))
+            self._last_control_time = time.time()
+            self._released = False
 
     def set_yaw(self, value: float):
         with self.lock:
             self.yaw = self._apply_deadband(value)
+            self._last_control_time = time.time()
+            self._released = False
 
     def set_pitch(self, value: float):
         with self.lock:
             self.pitch = self._apply_deadband(value)
+            self._last_control_time = time.time()
+            self._released = False
 
     def set_roll(self, value: float):
         with self.lock:
             self.roll = self._apply_deadband(value)
+            self._last_control_time = time.time()
+            self._released = False
 
     def on_disconnect(self):
         """
@@ -296,6 +353,9 @@ class RCOverrideController:
                 self.pitch = self._apply_deadband(pitch)
             if roll is not None:
                 self.roll = self._apply_deadband(roll)
+            # Marca de actividad del cliente (watchdog REST)
+            self._last_control_time = time.time()
+            self._released = False
             # Cualquier set_controls implica cliente activo → cancela failsafe
             if self._disconnected_at is not None:
                 was_disarmed = self._disarmed_by_failsafe
@@ -312,6 +372,23 @@ class RCOverrideController:
     def reset_controls(self):
         with self.lock:
             self.throttle = self.yaw = self.pitch = self.roll = 0.0
+            self._guided_vel = (0.0, 0.0, 0.0, 0.0)
+            self._guided_vel_time = None
+            self._last_control_time = time.time()
+            self._released = False
+
+    def set_guided_velocity(self, vx: float, vy: float, vz: float, yaw_rate: float = 0.0):
+        """Objetivo de velocidad para modo GUIDED (se reenvía a 10 Hz por el loop)."""
+        with self.lock:
+            self._guided_vel = (float(vx), float(vy), float(vz), float(yaw_rate))
+            self._guided_vel_time = time.time()
+            self._last_control_time = time.time()
+            self._released = False
+
+    def release_control(self):
+        """Devuelve el control al radio físico (libera todos los canales RC)."""
+        self.reset_controls()
+        self._release_control()
 
     def set_guided_mode(self, is_guided: bool):
         """Indica al RC controller si el drone está en GUIDED mode.

@@ -113,6 +113,21 @@ def get_mav_controller():
         raise HTTPException(status_code=503, detail="MAVLink no conectado")
     return mav
 
+
+def _add_app_aliases(tel: dict) -> None:
+    """Agrega nombres de campo que espera la app móvil (Telemetry.kt)."""
+    for alias, source in (
+        ("lat", "latitude"),
+        ("lon", "longitude"),
+        ("alt", "altitude"),
+        ("voltage", "battery_voltage"),
+        ("groundspeed", "ground_speed"),
+        ("heading", "yaw"),
+    ):
+        if tel.get(alias) is None and tel.get(source) is not None:
+            tel[alias] = tel.get(source)
+    tel.setdefault("fix_type", 0)
+
 # ── Estado y Telemetría ────────────────────────────────────────────────────────
 
 @router.get("/status")
@@ -136,26 +151,30 @@ async def get_telemetry():
         if _external_update_time > 0 and time.time() - _external_update_time < 30 and _external_mavlink_data:
             tel = dict(_external_mavlink_data)
             tel["_source"] = "external"
+            _add_app_aliases(tel)
             return tel
         ctrl = get_mav_controller()
         if ctrl.telemetry is None:
-            tel = ctrl.get_telemetry()
-            return {
+            raw = ctrl.get_telemetry()
+            tel = {
                 "armed":             ctrl.is_armed(),
                 "mode":              ctrl.get_mode(),
-                "altitude":          tel.get("altitude", 0),
-                "latitude":          tel.get("gps", {}).get("lat", 0),
-                "longitude":         tel.get("gps", {}).get("lon", 0),
-                "roll":              tel.get("attitude", {}).get("roll", 0),
-                "pitch":             tel.get("attitude", {}).get("pitch", 0),
-                "yaw":               tel.get("attitude", {}).get("yaw", 0),
-                "battery_voltage":   tel.get("battery", {}).get("voltage", 0),
-                "battery_remaining": tel.get("battery", {}).get("remaining", 0),
+                "altitude":          raw.get("altitude", 0),
+                "latitude":          raw.get("gps", {}).get("lat", 0),
+                "longitude":         raw.get("gps", {}).get("lon", 0),
+                "roll":              raw.get("attitude", {}).get("roll", 0),
+                "pitch":             raw.get("attitude", {}).get("pitch", 0),
+                "yaw":               raw.get("attitude", {}).get("yaw", 0),
+                "battery_voltage":   raw.get("battery", {}).get("voltage", 0),
+                "battery_remaining": raw.get("battery", {}).get("remaining", 0),
                 "ground_speed":      0.0,
                 "vertical_speed":    0.0,
-                "satellites":        tel.get("gps", {}).get("satellites", 0),
-                "hdop":              tel.get("gps", {}).get("hdop", 0),
+                "satellites":        raw.get("gps", {}).get("satellites", 0),
+                "hdop":              raw.get("gps", {}).get("hdop", 0),
+                "fix_type":          raw.get("gps", {}).get("fix_type", 0),
             }
+            _add_app_aliases(tel)
+            return tel
         attitude = ctrl.telemetry.get_attitude() or {}
         gps      = ctrl.telemetry.get_gps()      or {}
         battery  = ctrl.telemetry.get_battery()  or {}
@@ -163,7 +182,7 @@ async def get_telemetry():
 
         hdop_raw = gps.get("hdop", 0)
 
-        return {
+        tel = {
             "armed":             ctrl.is_armed(),
             "mode":              ctrl.get_mode(),
             "altitude":          ctrl.telemetry.data.get("altitude", 0),
@@ -178,7 +197,10 @@ async def get_telemetry():
             "vertical_speed":    velocity.get("vertical_speed", 0),
             "satellites":        gps.get("satellites", 0),
             "hdop":              hdop_raw if hdop_raw < 100 else 0,
+            "fix_type":          gps.get("fix_type", 0),
         }
+        _add_app_aliases(tel)
+        return tel
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -324,9 +346,14 @@ async def takeoff(request: TakeoffRequest):
         if not ctrl.is_armed():
             return {"success": False, "message": "Dron no está armado"}
         
-        # Bloqueo de despegue si batería muy baja
-        battery_remaining = ctrl.telemetry.get("battery_remaining", 100) if ctrl.telemetry else 100
-        if battery_remaining < MIN_BATTERY:
+        # Bloqueo de despegue si batería muy baja.
+        # remaining = -1 indica "sin dato" (no bloquear el despegue en ese caso).
+        battery_remaining = -1
+        try:
+            battery_remaining = (ctrl.get_battery() or {}).get("remaining", -1)
+        except Exception as e:
+            logger.warning("No se pudo leer la batería: %s", e)
+        if battery_remaining is not None and battery_remaining >= 0 and battery_remaining < MIN_BATTERY:
             return {"success": False, "message": f"Batería demasiado baja ({battery_remaining}%). Carga mínimo {MIN_BATTERY}% antes de despegar."}
         
         # Validación de altitud máxima
@@ -766,3 +793,204 @@ async def reset_obstacle_map():
         return {"success": False, "message": "Sensores no disponibles"}
     sensor_manager.obstacle_map.reset()
     return {"success": True, "message": "Mapa de obstáculos reiniciado"}
+
+
+# ── Alias /api/command/* — compatibilidad con la app móvil ──────────────────
+# La app móvil llama a /api/command/{arm,takeoff,land,rtl,set_mode,goto,rc},
+# mientras que el backend expone /api/{arm,...}. Estos alias mantienen ambas
+# convenciones y adaptan los cuerpos de petición (nombres de campos y unidades).
+
+class CommandArmRequest(BaseModel):
+    arm:   Optional[bool] = None
+    force: Optional[bool] = None
+
+class CommandTakeoffRequest(BaseModel):
+    altitude: Optional[float] = None
+    alt:      Optional[float] = None
+
+class CommandGotoRequest(BaseModel):
+    latitude:  Optional[float] = None
+    longitude: Optional[float] = None
+    lat:       Optional[float] = None
+    lon:       Optional[float] = None
+    lng:       Optional[float] = None
+    altitude:  Optional[float] = None
+    alt:       Optional[float] = None
+
+class CommandRCRequest(BaseModel):
+    # Acepta valores normalizados (throttle 0..1, resto -1..1) o PWM (1000..2000).
+    throttle: Optional[float] = None
+    yaw:      Optional[float] = None
+    pitch:    Optional[float] = None
+    roll:     Optional[float] = None
+
+class MissionUploadRequest(BaseModel):
+    waypoints: list
+    name:      Optional[str] = None
+
+
+def _looks_like_pwm(*values) -> bool:
+    return any(v is not None and abs(float(v)) > 1.5 for v in values)
+
+
+def _pwm_to_normalized(value, is_throttle: bool):
+    if value is None:
+        return None
+    v = float(value)
+    if is_throttle:
+        return max(0.0, min(1.0, (v - 1000.0) / 1000.0))
+    return max(-1.0, min(1.0, (v - 1500.0) / 500.0))
+
+
+def _apply_rc_command(ctrl, throttle, yaw, pitch, roll) -> dict:
+    """Aplica un comando de joystick normalizado.
+
+    En GUIDED el autopiloto ignora RC_CHANNELS_OVERRIDE, por lo que el joystick
+    se traduce a velocidades (SET_POSITION_TARGET_LOCAL_NED) igual que el WebSocket.
+    """
+    rc = getattr(ctrl, "rc", None)
+    if rc is None:
+        raise HTTPException(status_code=503, detail="RC Controller no inicializado")
+
+    mode = ctrl.get_mode() if hasattr(ctrl, "get_mode") else ""
+    if mode in ("GUIDED", "GUIDED_NOGPS"):
+        MAX_SPEED    = 5.0
+        MAX_VZ       = 2.0
+        MAX_YAW_RATE = 0.8
+        thr = 0.5 if throttle is None else throttle
+        vz = -(thr - 0.5) * 2.0 * MAX_VZ
+        vx = (pitch or 0.0) * MAX_SPEED
+        vy = (roll or 0.0) * MAX_SPEED
+        yr = (yaw or 0.0) * MAX_YAW_RATE
+        if hasattr(rc, "set_guided_velocity"):
+            rc.set_guided_velocity(vx, vy, vz, yr)
+        else:
+            cmd = getattr(ctrl, "cmd", None)
+            if cmd is not None and hasattr(cmd, "set_velocity"):
+                cmd.set_velocity(vx, vy, vz, yr)
+        return {"success": True, "message": "Velocidad actualizada (GUIDED)",
+                "vx": round(vx, 2), "vy": round(vy, 2), "vz": round(vz, 2)}
+
+    rc.set_controls(throttle=throttle, yaw=yaw, pitch=pitch, roll=roll)
+    return {"success": True, "message": "Controles RC actualizados",
+            "values": rc.get_current_values()}
+
+
+@router.post("/command/arm")
+async def command_arm(request: CommandArmRequest):
+    # La app envía {"arm": true}; "force" solo si se especifica explícitamente.
+    force = bool(request.force)
+    return await arm_drone(ArmRequest(force=force))
+
+
+@router.post("/command/disarm")
+async def command_disarm():
+    return await disarm_drone()
+
+
+@router.post("/command/takeoff")
+async def command_takeoff(request: CommandTakeoffRequest):
+    altitude = request.altitude if request.altitude is not None else request.alt
+    if altitude is None:
+        altitude = 10.0
+    return await takeoff(TakeoffRequest(altitude=float(altitude)))
+
+
+@router.post("/command/land")
+async def command_land():
+    return await land()
+
+
+@router.post("/command/rtl")
+async def command_rtl():
+    return await return_to_launch()
+
+
+@router.post("/command/set_mode")
+async def command_set_mode(request: ModeRequest):
+    return await set_mode(request)
+
+
+@router.post("/command/goto")
+async def command_goto(request: CommandGotoRequest):
+    lat = request.latitude if request.latitude is not None else request.lat
+    lon = request.longitude if request.longitude is not None else (
+        request.lon if request.lon is not None else request.lng)
+    alt = request.altitude if request.altitude is not None else (
+        request.alt if request.alt is not None else 10.0)
+    if lat is None or lon is None:
+        return {"success": False, "message": "Se requieren latitud y longitud"}
+    return await goto_location(GotoRequest(latitude=float(lat), longitude=float(lon), altitude=float(alt)))
+
+
+@router.post("/command/rc")
+async def command_rc(request: CommandRCRequest):
+    try:
+        ctrl = get_mav_controller()
+        pwm = _looks_like_pwm(request.throttle, request.yaw, request.pitch, request.roll)
+        if pwm:
+            throttle = _pwm_to_normalized(request.throttle, True)
+            yaw      = _pwm_to_normalized(request.yaw, False)
+            pitch    = _pwm_to_normalized(request.pitch, False)
+            roll     = _pwm_to_normalized(request.roll, False)
+        else:
+            throttle, yaw, pitch, roll = request.throttle, request.yaw, request.pitch, request.roll
+        return _apply_rc_command(ctrl, throttle, yaw, pitch, roll)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/command/emergency")
+async def command_emergency(request: EmergencyRequest):
+    return await emergency_action(request)
+
+
+@router.post("/rc/release")
+async def rc_release():
+    """Devuelve el control al radio físico (libera todos los canales RC)."""
+    try:
+        ctrl = get_mav_controller()
+        rc = getattr(ctrl, "rc", None)
+        if rc is None:
+            return {"success": False, "message": "RC Controller no disponible"}
+        if hasattr(rc, "release_control"):
+            rc.release_control()
+        else:
+            rc._release_control()
+        return {"success": True, "message": "Control devuelto al radio físico"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+def _normalize_waypoints(waypoints: list) -> list:
+    out = []
+    for wp in waypoints or []:
+        if not isinstance(wp, dict):
+            continue
+        lat = wp.get("lat", wp.get("latitude"))
+        lon = wp.get("lon", wp.get("lng", wp.get("longitude")))
+        alt = wp.get("alt", wp.get("altitude", 10.0))
+        if lat is None or lon is None:
+            continue
+        out.append({"lat": float(lat), "lon": float(lon), "alt": float(alt)})
+    return out
+
+
+@router.post("/command/mission/upload")
+async def command_mission_upload(request: MissionUploadRequest):
+    try:
+        ctrl = get_mav_controller()
+        wps = _normalize_waypoints(request.waypoints)
+        if not wps:
+            return {"success": False, "message": "No hay waypoints válidos"}
+        ok = await asyncio.to_thread(ctrl.upload_mission, wps)
+        return {"success": bool(ok), "message": f"Misión con {len(wps)} waypoints subida" if ok else "Error subiendo misión"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/mission/upload")
+async def mission_upload(request: MissionUploadRequest):
+    return await command_mission_upload(request)

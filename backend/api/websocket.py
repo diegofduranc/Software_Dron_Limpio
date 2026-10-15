@@ -200,6 +200,27 @@ def _get_sensor_data():
     return {}
 
 
+def _add_app_aliases(tel: dict) -> None:
+    """Agrega nombres de campo que espera la app móvil (Telemetry.kt).
+
+    El backend usa nombres largos (latitude/longitude/battery_voltage/ground_speed)
+    mientras la app espera lat/lon/alt/voltage/groundspeed/heading/fix_type.
+    """
+    for alias, source in (
+        ("lat", "latitude"),
+        ("lon", "longitude"),
+        ("alt", "altitude"),
+        ("voltage", "battery_voltage"),
+        ("groundspeed", "ground_speed"),
+        ("heading", "yaw"),
+    ):
+        if tel.get(alias) is None and tel.get(source) is not None:
+            tel[alias] = tel.get(source)
+    if tel.get("fix_type") is None:
+        gps = tel.get("gps")
+        tel["fix_type"] = gps.get("fix_type", 0) if isinstance(gps, dict) else 0
+
+
 async def get_telemetry_data(mav_controller) -> dict:
     """Extrae telemetría del controlador MAVLink + sensores."""
     try:
@@ -209,6 +230,7 @@ async def get_telemetry_data(mav_controller) -> dict:
             if _external_update_time > 0 and now - _external_update_time < 30 and _external_mavlink_data:
                 tel = dict(_external_mavlink_data)
                 tel.update(_get_sensor_data())
+                _add_app_aliases(tel)
                 return tel
         except Exception:
             pass
@@ -228,7 +250,7 @@ async def get_telemetry_data(mav_controller) -> dict:
                     "rc_pitch_pwm":    rv.get("pitch_pwm"),
                     "rc_yaw_pwm":      rv.get("yaw_pwm"),
                 }
-            return {
+            tel = {
                 "armed":             mav_controller.is_armed(),
                 "mode":              mav_controller.get_mode(),
                 "altitude":          sim.get("altitude", 0),
@@ -244,10 +266,13 @@ async def get_telemetry_data(mav_controller) -> dict:
                 "vertical_speed":    sim.get("climb_rate", 0),
                 "satellites":        sim.get("gps", {}).get("satellites", 0),
                 "hdop":              sim.get("gps", {}).get("hdop", 0),
+                "fix_type":          sim.get("gps", {}).get("fix_type", 0),
                 **sensors,
                 **rc_data,
                 **_get_nav_status(),
             }
+            _add_app_aliases(tel)
+            return tel
 
         if telemetry is None:
             if not getattr(get_telemetry_data, "_error_shown", False):
@@ -271,7 +296,7 @@ async def get_telemetry_data(mav_controller) -> dict:
                 "rc_yaw_pwm":      rv.get("yaw_pwm"),
             }
 
-        return {
+        tel = {
             "armed":             mav_controller.is_armed(),
             "mode":              mav_controller.get_mode(),
             "altitude":          gps.get("alt", 0),
@@ -287,10 +312,13 @@ async def get_telemetry_data(mav_controller) -> dict:
             "vertical_speed":    velocity.get("vertical_speed", 0),
             "satellites":        gps.get("satellites", gps.get("satellites_visible", 0)),
             "hdop":              gps.get("hdop", 0),
+            "fix_type":          gps.get("fix_type", 0),
             **sensors,
             **rc_data,
             **_get_nav_status(),
         }
+        _add_app_aliases(tel)
+        return tel
 
     except Exception as e:
         logger.error(f"Error obteniendo telemetría: {e}")
@@ -402,7 +430,8 @@ async def process_command(command: dict, mav_controller) -> dict:
             roll     = params.get("roll",     0.0)
 
             # En GUIDED mode ArduCopter ignora RC_CHANNELS_OVERRIDE.
-            # Traducimos joystick → SET_POSITION_TARGET_LOCAL_NED (velocidades).
+            # Traducimos joystick → velocidades; el RCOverrideController las
+            # reenvía a 10 Hz (SET_POSITION_TARGET_LOCAL_NED) para movimiento continuo.
             current_mode = mav_controller.get_mode() if hasattr(mav_controller, 'get_mode') else ""
             if current_mode in ("GUIDED", "GUIDED_NOGPS"):
                 MAX_SPEED    = 5.0   # m/s horizontal
@@ -413,12 +442,15 @@ async def process_command(command: dict, mav_controller) -> dict:
                 vx = pitch * MAX_SPEED
                 vy = roll  * MAX_SPEED
                 yr = yaw   * MAX_YAW_RATE
-                cmd = getattr(mav_controller, 'cmd', None)
-                if cmd and hasattr(cmd, 'set_velocity'):
-                    try:
-                        await asyncio.to_thread(cmd.set_velocity, vx, vy, vz, yr)
-                    except Exception as e:
-                        logger.warning("set_velocity error: %s", e)
+                if hasattr(rc, 'set_guided_velocity'):
+                    rc.set_guided_velocity(vx, vy, vz, yr)
+                else:
+                    cmd = getattr(mav_controller, 'cmd', None)
+                    if cmd and hasattr(cmd, 'set_velocity'):
+                        try:
+                            await asyncio.to_thread(cmd.set_velocity, vx, vy, vz, yr)
+                        except Exception as e:
+                            logger.warning("set_velocity error: %s", e)
                 return {"success": True, "message": "Velocidad actualizada (GUIDED)",
                         "vx": round(vx, 2), "vy": round(vy, 2), "vz": round(vz, 2)}
 
