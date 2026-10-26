@@ -36,8 +36,9 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
         setContent {
-            DrinixTheme {
-                val vm: DroneViewModel = hiltViewModel()
+            val vm: DroneViewModel = hiltViewModel()
+            val isDark by vm.darkModeFlow.collectAsState(initial = true)
+            DrinixTheme(isDark = isDark) {
 
                 // Solicitar permisos de ubicación y archivos al iniciar la app
                 val permissionLauncher = rememberLauncherForActivityResult(

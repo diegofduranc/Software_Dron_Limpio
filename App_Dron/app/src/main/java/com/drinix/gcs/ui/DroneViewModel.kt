@@ -209,16 +209,12 @@ class DroneViewModel @Inject constructor(
 
     // ---------- Autenticación ----------
 
-    /** Inicia sesión: valida datos, guarda host/puerto y token, y conecta el WS. */
-    fun login(host: String, port: Int, username: String, password: String) {
+    /** Inicia sesión: valida datos, guarda base URL y token, y conecta el WS. */
+    fun login(baseUrl: String, username: String, password: String) {
         if (_isAuthenticating.value) return
-        val cleanHost = host.trim()
-        if (!ConnectionValidator.isValidHost(cleanHost)) {
-            _authMessage.value = "Host inválido"
-            return
-        }
-        if (!ConnectionValidator.isValidPort(port)) {
-            _authMessage.value = "Puerto inválido (1-65535)"
+        val cleanBaseUrl = baseUrl.trim()
+        if (!ConnectionValidator.isValidUrl(cleanBaseUrl)) {
+            _authMessage.value = "URL del servidor inválida (debe empezar por http:// o https://)"
             return
         }
         if (username.isBlank() || password.isEmpty()) {
@@ -228,12 +224,41 @@ class DroneViewModel @Inject constructor(
         viewModelScope.launch {
             _isAuthenticating.value = true
             _authMessage.value = null
-            when (val result = auth.login(cleanHost, port, username, password)) {
+            when (val result = auth.login(cleanBaseUrl, username, password)) {
                 is AuthResult.Success -> {
                     _authState.value = AuthState.AUTHENTICATED
                     _authMessage.value = null
                     telemetryRepo.connect()
                     _commandEvents.emit(CommandResult.Success("Sesión iniciada como ${result.username}"))
+                }
+                AuthResult.InvalidCredentials ->
+                    _authMessage.value = "Credenciales inválidas"
+                AuthResult.Unreachable ->
+                    _authMessage.value = "Servidor inalcanzable (timeout)"
+                is AuthResult.Unexpected ->
+                    _authMessage.value = "Respuesta inesperada del servidor"
+            }
+            _isAuthenticating.value = false
+        }
+    }
+
+    /** Inicia sesión como invitado (sin contraseña) para pruebas. */
+    fun loginAsGuest(baseUrl: String) {
+        if (_isAuthenticating.value) return
+        val cleanBaseUrl = baseUrl.trim()
+        if (!ConnectionValidator.isValidUrl(cleanBaseUrl)) {
+            _authMessage.value = "URL del servidor inválida (debe empezar por http:// o https://)"
+            return
+        }
+        viewModelScope.launch {
+            _isAuthenticating.value = true
+            _authMessage.value = null
+            when (val result = auth.loginAsGuest(cleanBaseUrl)) {
+                is AuthResult.Success -> {
+                    _authState.value = AuthState.AUTHENTICATED
+                    _authMessage.value = null
+                    telemetryRepo.connect()
+                    _commandEvents.emit(CommandResult.Success("Sesión iniciada como invitado"))
                 }
                 AuthResult.InvalidCredentials ->
                     _authMessage.value = "Credenciales inválidas"
@@ -272,6 +297,13 @@ class DroneViewModel @Inject constructor(
     val authExpiresAtFlow = settings.expiresAtFlow
     val keepScreenOnFlow = settings.keepScreenOnFlow
     val droneNameFlow = settings.droneNameFlow
+    val droneModelFlow = settings.droneModelFlow
+    val droneImageUrlFlow = settings.droneImageUrlFlow
+    val environmentFlow = settings.environmentFlow
+    val darkModeFlow = settings.darkModeFlow
+    val joystickDeadzoneFlow = settings.joystickDeadzoneFlow
+    val joystickSensitivityFlow = settings.joystickSensitivityFlow
+    val baseUrlFlow = settings.baseUrlFlow
     val savedMissions = settings.missionsFlow
 
     fun saveMission(mission: com.drinix.gcs.data.model.SavedMission) {
@@ -300,6 +332,42 @@ class DroneViewModel @Inject constructor(
         }
     }
 
+    fun setDroneModel(model: String) {
+        viewModelScope.launch {
+            if (model.isNotBlank()) settings.setDroneModel(model)
+        }
+    }
+
+    fun setDroneImageUrl(url: String?) {
+        viewModelScope.launch { settings.setDroneImageUrl(url) }
+    }
+
+    fun setEnvironment(environment: String) {
+        viewModelScope.launch {
+            settings.setEnvironment(environment)
+            commands.setEnvironment(environment).also { _commandEvents.emit(it) }
+            if (environment == "outdoor") {
+                _commandEvents.emit(commands.verifyGps())
+            }
+        }
+    }
+
+    fun setDarkMode(enabled: Boolean) {
+        viewModelScope.launch { settings.setDarkMode(enabled) }
+    }
+
+    fun setJoystickDeadzone(value: Float) {
+        viewModelScope.launch { settings.setJoystickDeadzone(value) }
+    }
+
+    fun setJoystickSensitivity(value: Float) {
+        viewModelScope.launch { settings.setJoystickSensitivity(value) }
+    }
+
+    fun setBaseUrl(url: String) {
+        viewModelScope.launch { settings.setBaseUrl(url) }
+    }
+
     // ---------- Comandos ----------
     fun sendCommand(block: suspend CommandRepository.() -> CommandResult) {
         viewModelScope.launch {
@@ -314,11 +382,18 @@ class DroneViewModel @Inject constructor(
     fun setMode(mode: String) = sendCommand { sendSetMode(mode) }
     fun goto(lat: Double, lon: Double, alt: Double) = sendCommand { sendGoto(lat, lon, alt) }
     fun uploadMission(waypoints: List<Waypoint>) = sendCommand { uploadMission(waypoints) }
+    fun calibrateCompass() = sendCommand { calibrateCompass() }
+    fun calibrateSystem() = sendCommand { calibrateSystem() }
+    fun calibrateHome() = sendCommand { calibrateHome() }
+    fun verifyGps() = sendCommand { verifyGps() }
 
     /** Envía override RC (los joysticks limitan la frecuencia; sin snackbar). */
     fun sendRc(roll: Int, pitch: Int, throttle: Int, yaw: Int) {
         viewModelScope.launch { commands.sendRc(roll, pitch, throttle, yaw) }
     }
+
+    fun testMotor(motor: Int, throttle: Float, duration: Float = 1.5f) =
+        sendCommand { testMotor(motor, throttle, duration) }
 
     private fun haversineMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val r = 6_371_000.0

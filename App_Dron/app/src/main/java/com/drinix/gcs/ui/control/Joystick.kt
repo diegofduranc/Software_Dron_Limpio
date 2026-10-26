@@ -43,6 +43,10 @@ fun VirtualJoystick(
     modifier: Modifier = Modifier,
     /** Si true, el eje vertical no vuelve al centro al soltar (estilo throttle). */
     throttleMode: Boolean = false,
+    /** Zona muerta: valores por debajo de este umbral se tratan como 0 (0.0 a 1.0). */
+    deadzone: Float = 0.1f,
+    /** Multiplicador de sensibilidad del movimiento (0.1 a 2.0). */
+    sensitivity: Float = 1.0f,
 ) {
     var sizePx by remember { mutableStateOf(0) }
     var knobOffset by remember { mutableStateOf(Offset.Zero) }
@@ -64,6 +68,19 @@ fun VirtualJoystick(
         }
     }
 
+    /** Aplica zona muerta y sensibilidad a un valor normalizado [-1,1]. */
+    fun adjust(value: Float): Float {
+        var v = value
+        if (Math.abs(v) < deadzone) v = 0f
+        else {
+            // Remapear el rango restante para que no haya salto al salir de la zona muerta
+            val sign = if (v < 0) -1f else 1f
+            v = sign * ((Math.abs(v) - deadzone) / (1f - deadzone))
+        }
+        v = v * sensitivity
+        return v.coerceIn(-1f, 1f)
+    }
+
     Box(
         modifier = modifier
             .size(boxSize)
@@ -79,14 +96,19 @@ fun VirtualJoystick(
                         val radius = sizePx / 2f - with(density) { (knobSize / 2).toPx() }
                         knobOffset = if (throttleMode) Offset(0f, knobOffset.y) else Offset.Zero
                         onMove(
-                            knobOffset.x / radius,
-                            (-knobOffset.y / radius).coerceIn(-1f, 1f),
+                            adjust(knobOffset.x / radius),
+                            adjust((-knobOffset.y / radius).coerceIn(-1f, 1f)),
                         )
                         onRelease()
                     },
                     onDragCancel = {
                         dragging = false
+                        val radius = sizePx / 2f - with(density) { (knobSize / 2).toPx() }
                         knobOffset = if (throttleMode) Offset(0f, knobOffset.y) else Offset.Zero
+                        onMove(
+                            adjust(0f),
+                            if (throttleMode) adjust(knobOffset.y / radius) else adjust(0f),
+                        )
                         onRelease()
                     },
                 ) { change, dragAmount ->
@@ -95,8 +117,8 @@ fun VirtualJoystick(
                     if (radius > 0) {
                         knobOffset = clamp(knobOffset + dragAmount, radius)
                         onMove(
-                            (knobOffset.x / radius).coerceIn(-1f, 1f),
-                            (-knobOffset.y / radius).coerceIn(-1f, 1f),
+                            adjust(knobOffset.x / radius),
+                            adjust((-knobOffset.y / radius).coerceIn(-1f, 1f)),
                         )
                     }
                 }

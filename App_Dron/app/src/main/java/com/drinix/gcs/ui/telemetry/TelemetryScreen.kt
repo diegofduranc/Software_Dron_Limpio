@@ -145,7 +145,7 @@ fun TelemetryScreen(viewModel: DroneViewModel) {
                         false -> "DESARMADO"
                         null -> "--"
                     },
-                    valueColor = if (armed == true) ErrorRed else TextPrimary,
+                    valueColor = if (armed == false) ErrorRed else TextPrimary,
                 )
             }
             item {

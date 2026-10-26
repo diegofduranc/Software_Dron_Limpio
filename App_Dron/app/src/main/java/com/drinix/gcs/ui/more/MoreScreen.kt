@@ -57,15 +57,15 @@ private val sections = listOf(
         "Vuelo",
         listOf(
             MoreItem("Control del dron", "Armar, despegar, joysticks RC", Icons.Filled.Gamepad, Routes.CONTROL),
-            MoreItem("Misión por waypoints", "Planificar y subir misión", Icons.AutoMirrored.Filled.ListAlt, Routes.MISSION),
+            MoreItem("Misión por waypoints", "Planificar y subir misión", Icons.AutoMirrored.Filled.ListAlt, Routes.CONTROL),
         ),
     ),
     MoreSection(
         "Información",
         listOf(
-            MoreItem("Estado del dron", "Batería, GPS, sensores", Icons.Filled.MonitorHeart, Routes.STATUS),
-            MoreItem("Historial de vuelos", "Registro de vuelos anteriores", Icons.Filled.History, Routes.HISTORY),
-            MoreItem("Alertas", "Eventos y advertencias de vuelo", Icons.Filled.Notifications, Routes.ALERTS),
+            MoreItem("Estado del dron", "Batería, GPS, sensores", Icons.Filled.MonitorHeart, Routes.TELEMETRY),
+            MoreItem("Historial de vuelos", "Registro de vuelos anteriores", Icons.Filled.History, Routes.TELEMETRY),
+            MoreItem("Alertas", "Eventos y advertencias de vuelo", Icons.Filled.Notifications, Routes.TELEMETRY),
         ),
     ),
     MoreSection(
@@ -76,7 +76,6 @@ private val sections = listOf(
     ),
 )
 
-/** Menú "Más": cuadrícula de tarjetas agrupadas por categoría. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoreScreen(onNavigate: (String) -> Unit) {

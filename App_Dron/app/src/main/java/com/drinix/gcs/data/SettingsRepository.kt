@@ -34,6 +34,14 @@ class SettingsRepository @Inject constructor(
     val usernameFlow: Flow<String?> = store.data.map { it[KEY_USERNAME] }
     val keepScreenOnFlow: Flow<Boolean> = store.data.map { it[KEY_KEEP_SCREEN_ON] ?: false }
     val droneNameFlow: Flow<String> = store.data.map { it[KEY_DRONE_NAME] ?: DEFAULT_DRONE_NAME }
+    val droneModelFlow: Flow<String> = store.data.map { it[KEY_DRONE_MODEL] ?: DEFAULT_DRONE_MODEL }
+    val droneImageUrlFlow: Flow<String?> = store.data.map { it[KEY_DRONE_IMAGE_URL] }
+    val environmentFlow: Flow<String> = store.data.map { it[KEY_ENVIRONMENT] ?: DEFAULT_ENVIRONMENT }
+    val darkModeFlow: Flow<Boolean> = store.data.map { it[KEY_DARK_MODE] ?: DEFAULT_DARK_MODE }
+    val joystickDeadzoneFlow: Flow<Float> = store.data.map { (it[KEY_JOYSTICK_DEADZONE] ?: DEFAULT_JOYSTICK_DEADZONE_INT) / 1000f }
+    val joystickSensitivityFlow: Flow<Float> = store.data.map { (it[KEY_JOYSTICK_SENSITIVITY] ?: DEFAULT_JOYSTICK_SENSITIVITY_INT) / 1000f }
+    /** URL base completa del backend (ej: http://192.168.1.100:8000 o https://Raberry-innovacion.local:8000). */
+    val baseUrlFlow: Flow<String> = store.data.map { it[KEY_BASE_URL] ?: DEFAULT_BASE_URL }
 
     suspend fun setHost(host: String) = store.edit { it[KEY_HOST] = host }
     suspend fun setPort(port: Int) = store.edit { it[KEY_PORT] = port }
@@ -56,6 +64,17 @@ class SettingsRepository @Inject constructor(
     }
     suspend fun setKeepScreenOn(enabled: Boolean) = store.edit { it[KEY_KEEP_SCREEN_ON] = enabled }
     suspend fun setDroneName(name: String) = store.edit { it[KEY_DRONE_NAME] = name.trim() }
+    suspend fun setDroneModel(model: String) = store.edit { it[KEY_DRONE_MODEL] = model.trim() }
+    suspend fun setDroneImageUrl(url: String?) = store.edit {
+        if (url.isNullOrBlank()) it.remove(KEY_DRONE_IMAGE_URL) else it[KEY_DRONE_IMAGE_URL] = url
+    }
+    suspend fun setEnvironment(environment: String) = store.edit {
+        it[KEY_ENVIRONMENT] = environment
+    }
+    suspend fun setDarkMode(enabled: Boolean) = store.edit { it[KEY_DARK_MODE] = enabled }
+    suspend fun setJoystickDeadzone(value: Float) = store.edit { it[KEY_JOYSTICK_DEADZONE] = (value * 1000).toInt() }
+    suspend fun setJoystickSensitivity(value: Float) = store.edit { it[KEY_JOYSTICK_SENSITIVITY] = (value * 1000).toInt() }
+    suspend fun setBaseUrl(url: String) = store.edit { it[KEY_BASE_URL] = url.trim() }
 
     // ----- Misiones guardadas -----
     private val gson = com.google.gson.Gson()
@@ -102,6 +121,19 @@ class SettingsRepository @Inject constructor(
         private val KEY_USERNAME = stringPreferencesKey("username")
         private val KEY_KEEP_SCREEN_ON = booleanPreferencesKey("keep_screen_on")
         private val KEY_DRONE_NAME = stringPreferencesKey("drone_name")
+        private val KEY_DRONE_MODEL = stringPreferencesKey("drone_model")
+        private val KEY_DRONE_IMAGE_URL = stringPreferencesKey("drone_image_url")
+        private val KEY_ENVIRONMENT = stringPreferencesKey("environment")
+        private val KEY_DARK_MODE = booleanPreferencesKey("dark_mode")
+        private val KEY_JOYSTICK_DEADZONE = intPreferencesKey("joystick_deadzone")
+        private val KEY_JOYSTICK_SENSITIVITY = intPreferencesKey("joystick_sensitivity")
+        private val KEY_BASE_URL = stringPreferencesKey("base_url")
         private val KEY_MISSIONS = stringPreferencesKey("saved_missions")
+        const val DEFAULT_ENVIRONMENT = "outdoor"
+        const val DEFAULT_DRONE_MODEL = "ArduPilot Pixhawk"
+        const val DEFAULT_DARK_MODE = true
+        const val DEFAULT_JOYSTICK_DEADZONE_INT = 100 // 0.1f
+        const val DEFAULT_JOYSTICK_SENSITIVITY_INT = 1000 // 1.0f
+        const val DEFAULT_BASE_URL = "http://Raberry-innovacion.local:8000"
     }
 }

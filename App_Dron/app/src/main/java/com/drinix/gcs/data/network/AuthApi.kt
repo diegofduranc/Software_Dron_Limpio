@@ -17,6 +17,9 @@ interface AuthApi {
     @POST
     suspend fun login(@Url url: String, @Body body: LoginRequest): Response<LoginResponse>
 
+    @POST
+    suspend fun guestLogin(@Url url: String): Response<LoginResponse>
+
     @POST("api/auth/logout")
     suspend fun logout(): Response<Unit>
 }

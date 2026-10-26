@@ -177,48 +177,19 @@ private fun androidx.compose.foundation.lazy.LazyListScope.generalTab(t: Telemet
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.motorsTab(t: Telemetry?) {
-    // Salida estimada por motor: con armado ~100%, sin armado 0% (sin lectura real de RC_OUT aún).
-    val out = if (t?.armed == true) 100 else 0
-    val txt = if (t?.armed == null) "--" else "$out%"
-    item {
-        StatusRow(
-            icon = Icons.Filled.PowerSettingsNew,
-            title = "Motor M1",
-            headline = txt,
-            detail = if (t?.armed == true) "Girando" else "Detenido",
-            status = if (t?.armed == true) SubsystemStatus.OK else SubsystemStatus.UNKNOWN,
-            statusText = if (t?.armed == true) "Normal" else "--",
-        )
-    }
-    item {
-        StatusRow(
-            icon = Icons.Filled.PowerSettingsNew,
-            title = "Motor M2",
-            headline = txt,
-            detail = if (t?.armed == true) "Girando" else "Detenido",
-            status = if (t?.armed == true) SubsystemStatus.OK else SubsystemStatus.UNKNOWN,
-            statusText = if (t?.armed == true) "Normal" else "--",
-        )
-    }
-    item {
-        StatusRow(
-            icon = Icons.Filled.PowerSettingsNew,
-            title = "Motor M3",
-            headline = txt,
-            detail = if (t?.armed == true) "Girando" else "Detenido",
-            status = if (t?.armed == true) SubsystemStatus.OK else SubsystemStatus.UNKNOWN,
-            statusText = if (t?.armed == true) "Normal" else "--",
-        )
-    }
-    item {
-        StatusRow(
-            icon = Icons.Filled.PowerSettingsNew,
-            title = "Motor M4",
-            headline = txt,
-            detail = if (t?.armed == true) "Girando" else "Detenido",
-            status = if (t?.armed == true) SubsystemStatus.OK else SubsystemStatus.UNKNOWN,
-            statusText = if (t?.armed == true) "Normal" else "--",
-        )
+    repeat(4) { index ->
+        val motor = t?.motors?.getOrNull(index)
+        val value = motor?.rpm?.let { "$it RPM" } ?: motor?.pwm?.let { "$it PWM" } ?: "--"
+        item {
+            StatusRow(
+                icon = Icons.Filled.PowerSettingsNew,
+                title = "Motor M${index + 1}",
+                headline = value,
+                detail = if (motor?.rpm != null) "RPM reportadas por ESC" else "Salida PWM del Pixhawk",
+                status = if (motor != null) SubsystemStatus.OK else SubsystemStatus.UNKNOWN,
+                statusText = if (motor != null) "Normal" else "--",
+            )
+        }
     }
 }
 

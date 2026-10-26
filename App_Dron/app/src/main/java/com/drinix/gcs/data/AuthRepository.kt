@@ -20,16 +20,14 @@ class AuthRepository @Inject constructor(
 ) {
 
     suspend fun login(
-        host: String,
-        port: Int,
+        baseUrl: String,
         username: String,
         password: String,
     ): AuthResult {
-        val cleanHost = host.trim()
+        val cleanBaseUrl = baseUrl.trim().removeSuffix("/")
         return try {
-            // URL absoluta: apunta al servidor que el usuario escribió sin tocar
-            // la sesión activa (si las credenciales fallan, nada cambia).
-            val url = "http://$cleanHost:$port/api/auth/login"
+            // URL absoluta construida desde la base URL configurada
+            val url = "$cleanBaseUrl/api/auth/login"
             val response = api.login(url, LoginRequest(username.trim(), password))
             val body = response.body()
             val result = AuthResponseMapper.map(
@@ -39,8 +37,33 @@ class AuthRepository @Inject constructor(
                 fallbackUsername = username.trim(),
             )
             if (result is AuthResult.Success && body != null) {
-                session.applySession(cleanHost, port, body.token, result.expiresAtEpochSeconds, result.username)
-                persistSession(cleanHost, port, body.token, result.expiresAtEpochSeconds, result.username)
+                session.applySession(cleanBaseUrl, body.token, result.expiresAtEpochSeconds, result.username)
+                persistSession(cleanBaseUrl, body.token, result.expiresAtEpochSeconds, result.username)
+            }
+            result
+        } catch (e: IOException) {
+            AuthResult.Unreachable
+        } catch (e: Exception) {
+            AuthResult.Unexpected(e.message)
+        }
+    }
+
+    /** Inicia sesión como invitado (sin contraseña) para pruebas. */
+    suspend fun loginAsGuest(baseUrl: String): AuthResult {
+        val cleanBaseUrl = baseUrl.trim().removeSuffix("/")
+        return try {
+            val url = "$cleanBaseUrl/api/auth/guest-login"
+            val response = api.guestLogin(url)
+            val body = response.body()
+            val result = AuthResponseMapper.map(
+                isSuccessful = response.isSuccessful,
+                httpCode = response.code(),
+                body = body,
+                fallbackUsername = "guest",
+            )
+            if (result is AuthResult.Success && body != null) {
+                session.applySession(cleanBaseUrl, body.token, result.expiresAtEpochSeconds, result.username)
+                persistSession(cleanBaseUrl, body.token, result.expiresAtEpochSeconds, result.username)
             }
             result
         } catch (e: IOException) {
@@ -51,14 +74,12 @@ class AuthRepository @Inject constructor(
     }
 
     private suspend fun persistSession(
-        host: String,
-        port: Int,
+        baseUrl: String,
         token: String,
         expiresAtEpochSeconds: Long?,
         username: String,
     ) {
-        settings.setHost(host)
-        settings.setPort(port)
+        settings.setBaseUrl(baseUrl)
         settings.setUsername(username)
         settings.setToken(token)
         settings.setExpiresAt(expiresAtEpochSeconds)

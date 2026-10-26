@@ -17,4 +17,10 @@ data class Telemetry(
     @SerializedName("seq") val seq: Int? = null,
     /** GPS fix type (3 = 3D fix). Puede no venir. */
     @SerializedName("fix_type") val fixType: Int? = null,
+    @SerializedName("motors") val motors: List<MotorTelemetry> = emptyList(),
+)
+
+data class MotorTelemetry(
+    @SerializedName("pwm") val pwm: Int? = null,
+    @SerializedName("rpm") val rpm: Int? = null,
 )

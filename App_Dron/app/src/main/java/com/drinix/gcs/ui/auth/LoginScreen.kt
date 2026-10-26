@@ -16,17 +16,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.Icons.Default
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -66,8 +67,10 @@ fun AuthLoadingScreen() {
 fun LoginScreen(viewModel: DroneViewModel) {
     val host by viewModel.hostFlow.collectAsState(initial = SettingsRepository.DEFAULT_HOST)
     val port by viewModel.portFlow.collectAsState(initial = SettingsRepository.DEFAULT_PORT)
+    val baseUrl by viewModel.baseUrlFlow.collectAsState(initial = SettingsRepository.DEFAULT_BASE_URL)
     val message by viewModel.authMessage.collectAsState()
     val authenticating by viewModel.isAuthenticating.collectAsState()
+    var showScanDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -95,12 +98,27 @@ fun LoginScreen(viewModel: DroneViewModel) {
         Spacer(Modifier.height(28.dp))
 
         LoginForm(
-            initialHost = host,
-            initialPort = port.toString(),
+            initialBaseUrl = baseUrl,
             isAuthenticating = authenticating,
             message = message,
-            onSubmit = { h, p, u, pw -> viewModel.login(h, p, u, pw) },
+            onSubmit = { b, u, pw -> viewModel.login(b, u, pw) },
+            onGuestLogin = { b -> viewModel.loginAsGuest(b) },
+            onScan = {
+                showScanDialog = true
+            },
         )
+
+        // Diálogo de escaneo de red
+        if (showScanDialog) {
+            ScanDevicesDialog(
+                onDeviceSelected = { baseUrl ->
+                    showScanDialog = false
+                    viewModel.setBaseUrl(baseUrl)
+                },
+                onDismiss = { showScanDialog = false },
+                viewModel = viewModel,
+            )
+        }
     }
 }
 
@@ -110,45 +128,43 @@ fun LoginScreen(viewModel: DroneViewModel) {
  */
 @Composable
 fun LoginForm(
-    initialHost: String,
-    initialPort: String,
+    initialBaseUrl: String,
     isAuthenticating: Boolean,
     message: String?,
     buttonLabel: String = "Iniciar sesión",
-    onSubmit: (host: String, port: Int, username: String, password: String) -> Unit,
+    onSubmit: (baseUrl: String, username: String, password: String) -> Unit,
+    onGuestLogin: ((baseUrl: String) -> Unit)? = null,
+    onScan: (() -> Unit)? = null,
 ) {
-    var host by remember(initialHost) { mutableStateOf(initialHost) }
-    var port by remember(initialPort) { mutableStateOf(initialPort) }
+    var baseUrl by remember(initialBaseUrl) { mutableStateOf(initialBaseUrl) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
-    var hostError by remember { mutableStateOf(false) }
-    var portError by remember { mutableStateOf(false) }
+    var baseUrlError by remember { mutableStateOf(false) }
 
     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        OutlinedTextField(
-            value = host,
-            onValueChange = { host = it; hostError = false },
-            label = { Text("Host IP") },
-            supportingText = { if (hostError) Text("IP/host inválido", color = MaterialTheme.colorScheme.error) },
-            isError = hostError,
-            singleLine = true,
-            enabled = !isAuthenticating,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
-
-        OutlinedTextField(
-            value = port,
-            onValueChange = { port = it.filter { c -> c.isDigit() }.take(5); portError = false },
-            label = { Text("Puerto") },
-            supportingText = { if (portError) Text("Puerto inválido (1-65535)", color = MaterialTheme.colorScheme.error) },
-            isError = portError,
-            singleLine = true,
-            enabled = !isAuthenticating,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth(),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = baseUrl,
+                onValueChange = { baseUrl = it; baseUrlError = false },
+                label = { Text("URL del servidor") },
+                supportingText = { if (baseUrlError) Text("URL inválida (debe empezar por http:// o https://)", color = MaterialTheme.colorScheme.error) },
+                isError = baseUrlError,
+                singleLine = true,
+                enabled = !isAuthenticating,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Next),
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(
+                onClick = { onScan?.invoke() },
+                enabled = !isAuthenticating,
+            ) {
+                Text("Escanear red")
+            }
+        }
 
         OutlinedTextField(
             value = username,
@@ -169,11 +185,10 @@ fun LoginForm(
             visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
             trailingIcon = {
-                IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                    Icon(
-                        if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                        contentDescription = if (passwordVisible) "Ocultar contraseña" else "Mostrar contraseña",
-                    )
+                TextButton(
+                    onClick = { passwordVisible = !passwordVisible },
+                ) {
+                    Text(if (passwordVisible) "Ocultar" else "Mostrar")
                 }
             },
             modifier = Modifier.fillMaxWidth(),
@@ -185,12 +200,10 @@ fun LoginForm(
 
         Button(
             onClick = {
-                val h = host.trim()
-                val p = port.toIntOrNull()
-                hostError = !ConnectionValidator.isValidHost(h)
-                portError = p == null || !ConnectionValidator.isValidPort(p)
-                if (!hostError && !portError && p != null) {
-                    onSubmit(h, p, username, password)
+                val b = baseUrl.trim()
+                baseUrlError = !ConnectionValidator.isValidUrl(b)
+                if (!baseUrlError) {
+                    onSubmit(b, username, password)
                 }
             },
             enabled = !isAuthenticating,
@@ -206,6 +219,27 @@ fun LoginForm(
                 Text("Conectando...")
             } else {
                 Text(buttonLabel)
+            }
+        }
+
+        onGuestLogin?.let {
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    val b = baseUrl.trim()
+                    baseUrlError = !ConnectionValidator.isValidUrl(b)
+                    if (!baseUrlError) {
+                        it(b)
+                    }
+                },
+                enabled = !isAuthenticating,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+            ) {
+                Text("Ingresar como invitado")
             }
         }
 

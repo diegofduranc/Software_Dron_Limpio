@@ -1,6 +1,7 @@
 package com.drinix.gcs.data
 
 import com.drinix.gcs.data.model.SessionValidity
+import java.net.URI
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -35,6 +36,8 @@ class SessionManager @Inject constructor(
         private set
     @Volatile var username: String? = null
         private set
+    @Volatile var baseUrl: String = SettingsRepository.DEFAULT_BASE_URL
+        private set
 
     /** Se emite cuando el servidor rechaza la sesión (401 REST o 403/1008 WS). */
     private val _sessionExpired = MutableSharedFlow<Unit>(
@@ -50,6 +53,7 @@ class SessionManager @Inject constructor(
         runBlocking {
             host = settings.hostFlow.first()
             port = settings.portFlow.first()
+            baseUrl = settings.baseUrlFlow.first()
             token = settings.tokenFlow.first()
             expiresAtEpochSeconds = settings.expiresAtFlow.first()
             username = settings.usernameFlow.first()
@@ -57,6 +61,7 @@ class SessionManager @Inject constructor(
         // Mantener sincronizado ante cambios.
         scope.launch { settings.hostFlow.collect { host = it } }
         scope.launch { settings.portFlow.collect { port = it } }
+        scope.launch { settings.baseUrlFlow.collect { baseUrl = it } }
         scope.launch { settings.tokenFlow.collect { token = it } }
         scope.launch { settings.expiresAtFlow.collect { expiresAtEpochSeconds = it } }
         scope.launch { settings.usernameFlow.collect { username = it } }
@@ -70,26 +75,40 @@ class SessionManager @Inject constructor(
      * la siguiente petición/WS ya use estos valores sin esperar a DataStore.
      */
     fun applySession(
-        host: String,
-        port: Int,
+        baseUrl: String,
         token: String,
         expiresAtEpochSeconds: Long?,
         username: String?,
     ) {
-        this.host = host
-        this.port = port
+        this.baseUrl = baseUrl
+        // Extraer host y puerto de baseUrl para mantener compatibilidad con interceptores
+        try {
+            val uri = URI(baseUrl)
+            this.host = uri.host ?: this.host
+            this.port = uri.port ?: this.port
+        } catch (e: Exception) {
+            // Si falla el parseo, mantener los valores actuales
+        }
         this.token = token
         this.expiresAtEpochSeconds = expiresAtEpochSeconds
         this.username = username
     }
 
-    fun baseHttpUrl(): String = "http://$host:$port/"
+    fun baseHttpUrl(): String = baseUrl
 
     /** URL del WebSocket de telemetría, o null si no hay token utilizable. */
     fun wsTelemetryUrl(): String? {
         val t = token
         if (t.isNullOrBlank()) return null
-        return "ws://$host:$port/ws/telemetry?token=$t"
+        try {
+            val uri = URI(baseUrl)
+            val wsScheme = if (uri.scheme == "https") "wss" else "ws"
+            val host = uri.host ?: ""
+            val port = uri.port
+            return "$wsScheme://$host:$port/ws/telemetry?token=$t"
+        } catch (e: Exception) {
+            return null
+        }
     }
 
     /** Avisa de que la sesión dejó de ser válida. */

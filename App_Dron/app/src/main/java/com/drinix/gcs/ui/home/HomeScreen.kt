@@ -73,13 +73,15 @@ fun HomeScreen(
     val telemetry by viewModel.telemetry.collectAsState()
     val connState by viewModel.connectionState.collectAsState()
     val droneName by viewModel.droneNameFlow.collectAsState(initial = SettingsRepository.DEFAULT_DRONE_NAME)
+    val droneModel by viewModel.droneModelFlow.collectAsState(initial = SettingsRepository.DEFAULT_DRONE_MODEL)
+    val droneImageUrl by viewModel.droneImageUrlFlow.collectAsState(initial = null)
     val distance by viewModel.distanceToHome.collectAsState()
     val flightSeconds by viewModel.flightSeconds.collectAsState()
 
     val connected = connState == ConnectionState.CONNECTED
     val connecting = connState == ConnectionState.CONNECTING
 
-    var editName by remember { mutableStateOf(false) }
+    var editDrone by remember { mutableStateOf(false) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // Barra de marca estilo mockup: menú + logo + engranaje
@@ -120,6 +122,51 @@ fun HomeScreen(
             ),
         )
 
+        // ── Tarjeta de bienvenida con el dron ──
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .background(Color1.copy(alpha = 0.15f), RoundedCornerShape(30.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    AppIcons.Drone,
+                    contentDescription = null,
+                    tint = Color1,
+                    modifier = Modifier.size(64.dp),
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Bienvenido a $droneName",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+            Text(
+                "$droneModel · Listo para volar",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = { editDrone = true },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Icon(Icons.Filled.Edit, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Personalizar dron")
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         LazyVerticalGrid(
             columns = GridCells.Fixed(3),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -131,11 +178,12 @@ fun HomeScreen(
             item(span = { GridItemSpan(3) }) {
                 DroneCard(
                     name = droneName,
+                    model = droneModel,
                     id = "${viewModel.host}:${viewModel.port}",
                     mode = telemetry?.mode,
                     armed = telemetry?.armed,
                     connected = connected,
-                    onEditName = { editName = true },
+                    onEditDrone = { editDrone = true },
                 )
             }
 
@@ -235,31 +283,66 @@ fun HomeScreen(
         }
     }
 
-    // Diálogo para personalizar el nombre del dron
-    if (editName) {
+    // Diálogo para personalizar el dron (desde la pantalla principal)
+    if (editDrone) {
         var name by remember(droneName) { mutableStateOf(droneName) }
+        var model by remember(droneModel) { mutableStateOf(droneModel) }
+        var imageUrl by remember(droneImageUrl ?: "") { mutableStateOf(droneImageUrl ?: "") }
         AlertDialog(
-            onDismissRequest = { editName = false },
-            title = { Text("Nombre del dron") },
+            onDismissRequest = { editDrone = false },
+            title = { Text("Personalizar tu dron") },
             text = {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(24) },
-                    singleLine = true,
-                    label = { Text("Nombre") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
+                Column(modifier = Modifier.width(300.dp)) {
+                    Text(
+                        "Elige cómo quieres que aparezca tu dron en la pantalla principal.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(24) },
+                        singleLine = true,
+                        label = { Text("Nombre del dron") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = model,
+                        onValueChange = { model = it.take(30) },
+                        singleLine = true,
+                        label = { Text("Modelo (ej. Quad X4)") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = imageUrl,
+                        onValueChange = { imageUrl = it },
+                        singleLine = true,
+                        label = { Text("URL de la imagen (opcional)") },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Text(
+                        "Pega aquí la URL de una imagen PNG de tu dron (ej. de rawpixel.com).",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         if (name.isNotBlank()) viewModel.setDroneName(name)
-                        editName = false
+                        if (model.isNotBlank()) viewModel.setDroneModel(model)
+                        viewModel.setDroneImageUrl(if (imageUrl.isNotBlank()) imageUrl else null)
+                        editDrone = false
                     },
                 ) { Text("Guardar") }
             },
             dismissButton = {
-                TextButton(onClick = { editName = false }) { Text("Cancelar") }
+                TextButton(onClick = { editDrone = false }) { Text("Cancelar") }
             },
         )
     }
@@ -271,11 +354,12 @@ private inline fun metric(connected: Boolean, crossinline value: () -> String?):
 @Composable
 private fun DroneCard(
     name: String,
+    model: String,
     id: String,
     mode: String?,
     armed: Boolean?,
     connected: Boolean,
-    onEditName: () -> Unit,
+    onEditDrone: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
@@ -285,37 +369,42 @@ private fun DroneCard(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().padding(16.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(60.dp)
-                    .background(Color2.copy(alpha = 0.45f), RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    AppIcons.Drone,
-                    contentDescription = null,
-                    tint = Color1,
-                    modifier = Modifier.size(38.dp),
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(
+                    modifier = Modifier
+                        .size(70.dp)
+                        .background(Color2.copy(alpha = 0.45f), RoundedCornerShape(16.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        AppIcons.Drone,
+                        contentDescription = null,
+                        tint = Color1,
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    model,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
                 )
             }
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(name, style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = onEditName, modifier = Modifier.size(28.dp)) {
+                    IconButton(onClick = onEditDrone, modifier = Modifier.size(28.dp)) {
                         Icon(
                             Icons.Filled.Edit,
-                            contentDescription = "Editar nombre",
+                            contentDescription = "Editar dron",
                             tint = TextSecondary,
                             modifier = Modifier.size(16.dp),
                         )
                     }
                 }
-                Text(
-                    "Modelo: ArduPilot",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                )
                 Text(
                     "ID: $id",
                     style = MaterialTheme.typography.bodySmall,

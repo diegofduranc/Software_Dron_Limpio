@@ -13,6 +13,12 @@ data class ArmRequest(@SerializedName("arm") val arm: Boolean)
 data class TakeoffRequest(@SerializedName("altitude") val altitude: Double)
 
 data class SetModeRequest(@SerializedName("mode") val mode: String)
+data class EnvironmentRequest(@SerializedName("environment") val environment: String)
+data class MotorTestRequest(
+    @SerializedName("motor") val motor: Int,
+    @SerializedName("throttle") val throttle: Float,
+    @SerializedName("duration") val duration: Float,
+)
 
 data class GotoRequest(
     @SerializedName("lat") val lat: Double,
