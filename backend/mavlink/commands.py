@@ -537,6 +537,54 @@ class DroneCommands:
         logger.info(f"✅ Motor {motor_id} test complete")
         return True
 
+    def calibrate_compass(self):
+        """Inicia la calibración de la brújula en el autopiloto."""
+        logger.info("🧭 COMPASS CALIBRATION — iniciando")
+        with self.conn._lock:
+            master = self.conn.master
+            if not master:
+                raise ConnectionError("No hay conexión con Pixhawk")
+            master.mav.command_long_send(
+                master.target_system,
+                master.target_component,
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+                0,
+                0, 1, 0, 0, 0, 0, 0,
+            )
+        return True
+
+    def calibrate_all(self):
+        """Inicia la calibración de giroscopio, brújula y acelerómetro."""
+        logger.info("🛠️ FULL CALIBRATION — iniciando")
+        with self.conn._lock:
+            master = self.conn.master
+            if not master:
+                raise ConnectionError("No hay conexión con Pixhawk")
+            master.mav.command_long_send(
+                master.target_system,
+                master.target_component,
+                mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+                0,
+                1, 1, 0, 0, 1, 0, 0,
+            )
+        return True
+
+    def set_home_current(self):
+        """Establece la posición GPS actual como Home."""
+        logger.info("🏠 SET HOME — usando posición actual")
+        with self.conn._lock:
+            master = self.conn.master
+            if not master:
+                raise ConnectionError("No hay conexión con Pixhawk")
+            master.mav.command_long_send(
+                master.target_system,
+                master.target_component,
+                mavutil.mavlink.MAV_CMD_DO_SET_HOME,
+                0,
+                1, 0, 0, 0, 0, 0, 0,
+            )
+        return True
+
     # ── Utilidades ─────────────────────────────────────────────────────────────
 
     def get_current_mode(self):

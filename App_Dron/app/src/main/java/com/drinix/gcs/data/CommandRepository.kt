@@ -22,7 +22,11 @@ class CommandRepository @Inject constructor(
     private val api: DroneApi,
 ) {
 
-    suspend fun sendArm(arm: Boolean) = execute("ARM ${if (arm) "activado" else "desactivado"}") { api.arm(ArmRequest(arm)) }
+    suspend fun sendArm(arm: Boolean) = if (arm) {
+        execute("ARM activado") { api.arm(ArmRequest(true)) }
+    } else {
+        execute("ARM desactivado") { api.disarm() }
+    }
     suspend fun sendTakeoff(altitude: Double) = execute("Despegue a $altitude m") { api.takeoff(TakeoffRequest(altitude)) }
     suspend fun sendLand() = execute("Aterrizaje iniciado") { api.land() }
     suspend fun sendRtl() = execute("RTL (Return to Launch)") { api.rtl() }

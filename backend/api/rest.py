@@ -103,6 +103,11 @@ class RCControlRequest(BaseModel):
     pitch:    Optional[float] = None  # -1.0 – 1.0
     roll:     Optional[float] = None  # -1.0 – 1.0
 
+class MotorTestRequest(BaseModel):
+    motor: int
+    throttle: float = 10.0
+    duration: float = 1.5
+
 class EmergencyRequest(BaseModel):
     action: str  # "STOP", "RTL", "LAND", "KILL"
 
@@ -268,6 +273,70 @@ async def diag_motor_test(motor: int = 0, throttle: float = 10.0, duration: floa
         ctrl = get_mav_controller()
         await asyncio.to_thread(ctrl.cmd.test_motor, motor, throttle, duration, even_if_armed=armed)
         return {"success": True, "message": f"Motor {motor} tested @ {throttle}% for {duration}s"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/command/motor_test")
+async def command_motor_test(request: MotorTestRequest):
+    if not 1 <= request.motor <= 4:
+        return {"success": False, "message": "El motor debe estar entre 1 y 4"}
+    if not 0 <= request.throttle <= 100:
+        return {"success": False, "message": "La potencia debe estar entre 0 y 100"}
+    if not 0 < request.duration <= 10:
+        return {"success": False, "message": "La duración debe estar entre 0 y 10 segundos"}
+    try:
+        ctrl = get_mav_controller()
+        await asyncio.to_thread(
+            ctrl.test_motor,
+            request.motor,
+            request.throttle,
+            request.duration,
+        )
+        return {
+            "success": True,
+            "message": f"Motor {request.motor} probado al {request.throttle}% durante {request.duration}s",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/calibration/compass")
+async def calibrate_compass():
+    try:
+        ctrl = get_mav_controller()
+        await asyncio.to_thread(ctrl.calibrate_compass)
+        return {"success": True, "message": "Calibración de brújula iniciada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/calibration/all")
+async def calibrate_all():
+    try:
+        ctrl = get_mav_controller()
+        await asyncio.to_thread(ctrl.calibrate_all)
+        return {"success": True, "message": "Calibración integral iniciada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/calibration/home")
+async def calibrate_home():
+    try:
+        ctrl = get_mav_controller()
+        await asyncio.to_thread(ctrl.set_home_current)
+        return {"success": True, "message": "Posición Home configurada"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/calibration/gps")
+async def verify_gps():
+    try:
+        ctrl = get_mav_controller()
+        checks = ctrl.preflight_checks()
+        gps_ok = bool(checks.get("gps_fix"))
+        return {
+            "success": gps_ok,
+            "message": "Señal GPS válida" if gps_ok else "Señal GPS insuficiente",
+            "checks": checks,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

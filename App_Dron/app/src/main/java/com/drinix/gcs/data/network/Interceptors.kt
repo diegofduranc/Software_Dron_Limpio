@@ -1,6 +1,8 @@
 package com.drinix.gcs.data.network
 
 import com.drinix.gcs.data.SessionManager
+import java.io.IOException
+import java.net.URI
 import javax.inject.Inject
 import okhttp3.Interceptor
 import okhttp3.Response
@@ -54,9 +56,26 @@ class HostRewriteInterceptor @Inject constructor(
         if (original.url.host != PLACEHOLDER_HOST) {
             return chain.proceed(original)
         }
+        val baseUri = try {
+            URI(session.baseUrl)
+        } catch (e: Exception) {
+            throw IOException("URL base del servidor inválida: ${session.baseUrl}", e)
+        }
+        val host = baseUri.host
+            ?: throw IOException("La URL base no contiene un host válido: ${session.baseUrl}")
+        val port = if (baseUri.port != -1) {
+            baseUri.port
+        } else if (baseUri.scheme == "https") {
+            443
+        } else {
+            80
+        }
+        val scheme = baseUri.scheme
+            ?: throw IOException("La URL base no contiene un esquema válido: ${session.baseUrl}")
         val newUrl = original.url.newBuilder()
-            .host(session.host)
-            .port(session.port)
+            .scheme(scheme)
+            .host(host)
+            .port(port)
             .build()
         return chain.proceed(original.newBuilder().url(newUrl).build())
     }

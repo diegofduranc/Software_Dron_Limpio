@@ -23,6 +23,9 @@ interface DroneApi {
     @POST("api/command/arm")
     suspend fun arm(@Body body: ArmRequest): Response<CommandResponse>
 
+    @POST("api/command/disarm")
+    suspend fun disarm(): Response<CommandResponse>
+
     @POST("api/command/takeoff")
     suspend fun takeoff(@Body body: TakeoffRequest): Response<CommandResponse>
 

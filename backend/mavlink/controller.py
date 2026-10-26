@@ -53,6 +53,9 @@ class MAVController:
             self.goto = lambda lat, lon, alt: self._sim.goto_position(lat, lon, alt)
             self.kill_motors = lambda: False
             self.test_motor = self._sim.test_motor
+            self.calibrate_compass = lambda: True
+            self.calibrate_all = lambda: True
+            self.set_home_current = lambda: True
 
             return
 
