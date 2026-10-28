@@ -99,3 +99,4 @@ documentacion/~$*
 # Session tokens (secretos en runtime)
 backend/data/sessions.json
 backend/data/users.json
+*.bak

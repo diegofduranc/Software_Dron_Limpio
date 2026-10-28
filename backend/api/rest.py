@@ -277,29 +277,39 @@ async def diag_motor_test(motor: int = 0, throttle: float = 10.0, duration: floa
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/command/motor_test")
+@router.post("/command/motor_test")
 async def command_motor_test(request: MotorTestRequest):
-    if not 1 <= request.motor <= 4:
-        return {"success": False, "message": "El motor debe estar entre 1 y 4"}
-    if not 0 <= request.throttle <= 100:
-        return {"success": False, "message": "La potencia debe estar entre 0 y 100"}
-    if not 0 < request.duration <= 10:
-        return {"success": False, "message": "La duración debe estar entre 0 y 10 segundos"}
+    import json
     try:
-        ctrl = get_mav_controller()
-        await asyncio.to_thread(
-            ctrl.test_motor,
-            request.motor,
-            request.throttle,
-            request.duration,
-        )
-        return {
-            "success": True,
-            "message": f"Motor {request.motor} probado al {request.throttle}% durante {request.duration}s",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Detener el override para que no interfiera
+        ctrl.stop_rc_override()
+    except:
+        pass
+
+    # Escribir la orden para el demonio
+    cmd_data = {
+        "motor": request.motor,
+        "throttle": request.throttle,
+        "duration": request.duration
+    }
+    with open("/tmp/motor_command.json", "w") as f:
+        json.dump(cmd_data, f)
+        
+    return {"success": True, "message": f"Orden enviada al motor {request.motor}"}
 
 @router.post("/calibration/compass")
+async def calibrate_compass():
+    import subprocess
+    import asyncio
+    
+    process = await asyncio.create_subprocess_exec(
+        "/home/rasberry/Documents/drone/venv/bin/python3",
+        "/home/rasberry/Documents/drone/calibrate_compass_daemon.py"
+    )
+    await process.wait()
+    
+    return {"success": True, "message": "Calibración de brújula finalizada"}
+
 async def calibrate_compass():
     try:
         ctrl = get_mav_controller()
