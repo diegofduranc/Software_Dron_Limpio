@@ -277,25 +277,58 @@ async def diag_motor_test(motor: int = 0, throttle: float = 10.0, duration: floa
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/command/motor_test")
+async def command_motor_test(request: MotorTestRequest):
+    import json
+    try:
+        # Escribir la orden para el demonio (sin usar ctrl)
+        cmd_data = {
+            "motor": request.motor,
+            "throttle": request.throttle,
+            "duration": request.duration
+        }
+        with open("/tmp/motor_command.json", "w") as f:
+            json.dump(cmd_data, f)
+            
+        return {"success": True, "message": f"Orden enviada al demonio: Motor {request.motor}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
 @router.post("/command/motor_test")
 async def command_motor_test(request: MotorTestRequest):
     import json
     try:
-        # Detener el override para que no interfiera
-        ctrl.stop_rc_override()
-    except:
-        pass
+        # Escribir la orden para el demonio (sin usar ctrl)
+        cmd_data = {
+            "motor": request.motor,
+            "throttle": request.throttle,
+            "duration": request.duration
+        }
+        with open("/tmp/motor_command.json", "w") as f:
+            json.dump(cmd_data, f)
+            
+        return {"success": True, "message": f"Orden enviada al demonio: Motor {request.motor}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
-    # Escribir la orden para el demonio
-    cmd_data = {
-        "motor": request.motor,
-        "throttle": request.throttle,
-        "duration": request.duration
-    }
-    with open("/tmp/motor_command.json", "w") as f:
-        json.dump(cmd_data, f)
-        
-    return {"success": True, "message": f"Orden enviada al motor {request.motor}"}
+
+@router.post("/command/motor_test")
+async def command_motor_test(request: MotorTestRequest):
+    import json
+    try:
+        # Escribir la orden para el demonio (sin usar ctrl)
+        cmd_data = {
+            "motor": request.motor,
+            "throttle": request.throttle,
+            "duration": request.duration
+        }
+        with open("/tmp/motor_command.json", "w") as f:
+            json.dump(cmd_data, f)
+            
+        return {"success": True, "message": f"Orden enviada al demonio: Motor {request.motor}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
 
 @router.post("/calibration/compass")
 async def calibrate_compass():
@@ -956,6 +989,19 @@ def _apply_rc_command(ctrl, throttle, yaw, pitch, roll) -> dict:
 
 
 @router.post("/command/arm")
+async def command_arm():
+    try:
+        # 1. Pausar el RC Override para que no interfiera con el armado
+        if hasattr(ctrl, 'rc_override') and ctrl.rc_override:
+            ctrl.rc_override.stop()
+        
+        # 2. Enviar comando de armar directo
+        success = ctrl.cmd.arm()
+        
+        return {"success": True, "message": "Dron armado", "armed": success}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
 async def command_arm(request: CommandArmRequest):
     # La app envía {"arm": true}; "force" solo si se especifica explícitamente.
     force = bool(request.force)
