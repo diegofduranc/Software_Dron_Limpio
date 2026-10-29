@@ -11,6 +11,7 @@ import com.drinix.gcs.data.TelemetryRepository
 import com.drinix.gcs.data.model.AlertSeverity
 import com.drinix.gcs.data.model.AuthResult
 import com.drinix.gcs.data.model.AuthState
+import com.drinix.gcs.data.model.CalibrationStatus
 import com.drinix.gcs.data.model.CommandResult
 import com.drinix.gcs.data.model.ConnectionState
 import com.drinix.gcs.data.model.FlightAlert
@@ -23,6 +24,7 @@ import kotlin.math.cos
 import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +32,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
@@ -62,6 +65,12 @@ class DroneViewModel @Inject constructor(
     /** Mensajes de resultado de comandos (para Snackbars). */
     private val _commandEvents = MutableSharedFlow<CommandResult>(extraBufferCapacity = 8)
     val commandEvents: SharedFlow<CommandResult> = _commandEvents.asSharedFlow()
+
+    /** Último estado de calibración recibido del backend (para diálogos en pantalla). */
+    private val _calibrationStatus = MutableStateFlow<CalibrationStatus?>(null)
+    val calibrationStatus: StateFlow<CalibrationStatus?> = _calibrationStatus.asStateFlow()
+
+    private var calibrationJob: Job? = null
 
     // ---------- Estado de vuelo derivado ----------
     private val _pathPoints = MutableStateFlow<List<Pair<Double, Double>>>(emptyList())
@@ -159,6 +168,11 @@ class DroneViewModel @Inject constructor(
                 delay(1000)
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        calibrationJob?.cancel()
     }
 
     private fun processAlerts(t: Telemetry?) {
@@ -375,17 +389,65 @@ class DroneViewModel @Inject constructor(
         }
     }
 
-    fun arm(arm: Boolean) = sendCommand { sendArm(arm) }
+    fun arm(arm: Boolean) {
+        if (arm) {
+            viewModelScope.launch {
+                val release = commands.releaseRc()
+                if (release is CommandResult.Error) {
+                    _commandEvents.emit(release)
+                    return@launch
+                }
+                delay(500)
+                val result = commands.sendArm(true)
+                if (result is CommandResult.Success) {
+                    _commandEvents.emit(CommandResult.Success("Dron Armado"))
+                } else {
+                    _commandEvents.emit(result)
+                }
+            }
+        } else {
+            sendCommand { sendArm(false) }
+        }
+    }
     fun takeoff(altitude: Double) = sendCommand { sendTakeoff(altitude) }
     fun land() = sendCommand { sendLand() }
     fun rtl() = sendCommand { sendRtl() }
     fun setMode(mode: String) = sendCommand { sendSetMode(mode) }
     fun goto(lat: Double, lon: Double, alt: Double) = sendCommand { sendGoto(lat, lon, alt) }
     fun uploadMission(waypoints: List<Waypoint>) = sendCommand { uploadMission(waypoints) }
-    fun calibrateCompass() = sendCommand { calibrateCompass() }
-    fun calibrateSystem() = sendCommand { calibrateSystem() }
+    fun calibrateCompass() {
+        viewModelScope.launch {
+            val result = commands.calibrateCompass()
+            _commandEvents.emit(result)
+            if (result is CommandResult.Success) startCalibrationPolling()
+        }
+    }
+    fun calibrateSystem() {
+        viewModelScope.launch {
+            val result = commands.calibrateSystem()
+            _commandEvents.emit(result)
+            if (result is CommandResult.Success) startCalibrationPolling()
+        }
+    }
     fun calibrateHome() = sendCommand { calibrateHome() }
     fun verifyGps() = sendCommand { verifyGps() }
+
+    private fun startCalibrationPolling() {
+        calibrationJob?.cancel()
+        _calibrationStatus.value = null
+        calibrationJob = viewModelScope.launch {
+            while (isActive) {
+                val status = commands.getCalibrationStatus()
+                _calibrationStatus.value = status
+                if (status.status != "running") break
+                delay(2000)
+            }
+        }
+    }
+
+    fun clearCalibrationStatus() {
+        _calibrationStatus.value = null
+    }
 
     /** Envía override RC (los joysticks limitan la frecuencia; sin snackbar). */
     fun sendRc(roll: Int, pitch: Int, throttle: Int, yaw: Int) {

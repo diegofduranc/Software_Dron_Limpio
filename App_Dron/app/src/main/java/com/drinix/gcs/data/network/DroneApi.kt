@@ -1,6 +1,7 @@
 package com.drinix.gcs.data.network
 
 import com.drinix.gcs.data.model.ArmRequest
+import com.drinix.gcs.data.model.CalibrationStatus
 import com.drinix.gcs.data.model.CommandResponse
 import com.drinix.gcs.data.model.GotoRequest
 import com.drinix.gcs.data.model.MissionUploadRequest
@@ -64,4 +65,10 @@ interface DroneApi {
 
     @POST("api/calibration/gps")
     suspend fun verifyGps(): Response<CommandResponse>
+
+    @GET("api/calibration/status")
+    suspend fun getCalibrationStatus(): Response<CalibrationStatus>
+
+    @POST("api/rc/release")
+    suspend fun releaseRc(): Response<CommandResponse>
 }

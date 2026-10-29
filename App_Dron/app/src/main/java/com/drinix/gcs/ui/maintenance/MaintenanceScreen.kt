@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -28,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.drinix.gcs.data.model.CalibrationStatus
 import com.drinix.gcs.ui.DroneViewModel
 import com.drinix.gcs.ui.common.GcsTopBar
 
@@ -36,6 +38,7 @@ import com.drinix.gcs.ui.common.GcsTopBar
 @Composable
 fun MaintenanceScreen(viewModel: DroneViewModel, onBack: () -> Unit) {
     var confirmFullCalibration by remember { mutableStateOf(false) }
+    val calibration by viewModel.calibrationStatus.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         GcsTopBar(title = "Mantenimiento", onBack = onBack)
@@ -112,6 +115,40 @@ fun MaintenanceScreen(viewModel: DroneViewModel, onBack: () -> Unit) {
                 TextButton(onClick = { confirmFullCalibration = false }) { Text("Cancelar") }
             },
         )
+    }
+
+    // ── Diálogos de estado de calibración (polling) ──
+    val calib = calibration
+    when (calib?.status) {
+        "running" -> {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Calibrando sensores") },
+                text = {
+                    Column {
+                        Text(calib.message)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        CircularProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {},
+            )
+        }
+        "success", "error" -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearCalibrationStatus() },
+                title = { Text(if (calib.status == "success") "Éxito" else "Error") },
+                text = { Text(calib.message) },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.clearCalibrationStatus() }) { Text("Aceptar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.clearCalibrationStatus() }) { Text("Cerrar") }
+                },
+            )
+        }
+        else -> Unit
     }
 }
 
