@@ -989,23 +989,14 @@ def _apply_rc_command(ctrl, throttle, yaw, pitch, roll) -> dict:
 
 
 @router.post("/command/arm")
-async def command_arm():
-    try:
-        # 1. Pausar el RC Override para que no interfiera con el armado
-        if hasattr(ctrl, 'rc_override') and ctrl.rc_override:
-            ctrl.rc_override.stop()
-        
-        # 2. Enviar comando de armar directo
-        success = ctrl.cmd.arm()
-        
-        return {"success": True, "message": "Dron armado", "armed": success}
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
 async def command_arm(request: CommandArmRequest):
-    # La app envía {"arm": true}; "force" solo si se especifica explícitamente.
+    # La app envía {"arm": true} o {"arm": false}; "force" solo si se especifica explícitamente.
+    arm = request.arm if request.arm is not None else True
     force = bool(request.force)
-    return await arm_drone(ArmRequest(force=force))
+    if arm:
+        return await arm_drone(ArmRequest(force=force))
+    else:
+        return await disarm_drone()
 
 
 @router.post("/command/disarm")
