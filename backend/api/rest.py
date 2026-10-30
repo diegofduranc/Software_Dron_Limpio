@@ -331,43 +331,46 @@ async def command_motor_test(request: MotorTestRequest):
 
 
 @router.post("/calibration/compass")
-async def calibrate_compass():
+async def calibration_compass():
     import subprocess
     import asyncio
-    
-    process = await asyncio.create_subprocess_exec(
-        "/home/rasberry/Documents/drone/venv/bin/python3",
-        "/home/rasberry/Documents/drone/calibrate_compass_daemon.py"
-    )
-    await process.wait()
-    
-    return {"success": True, "message": "Calibración de brújula finalizada"}
-
-async def calibrate_compass():
     try:
-        ctrl = get_mav_controller()
-        await asyncio.to_thread(ctrl.calibrate_compass)
-        return {"success": True, "message": "Calibración de brújula iniciada"}
+        # Escribir la orden para el demonio
+        with open("/tmp/motor_command.json", "w") as f:
+            f.write('{"action": "compass"}')
+        
+        # Ejecutar el demonio en un proceso separado (se cerrará solo al terminar)
+        subprocess.Popen(
+            ["/home/rasberry/Documents/drone/venv/bin/python3", "/home/rasberry/Documents/drone/motor_daemon.py"],
+            stdout=subprocess.DEVNULL, 
+            stderr=subprocess.DEVNULL
+        )
+        return {"success": True, "message": "Calibración iniciada. Gira el dron ahora."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "message": str(e)}
+
 
 @router.post("/calibration/all")
-async def calibrate_all():
+async def calibration_all():
+    import json
     try:
-        ctrl = get_mav_controller()
-        await asyncio.to_thread(ctrl.calibrate_all)
-        return {"success": True, "message": "Calibración integral iniciada"}
+        with open("/tmp/motor_command.json", "w") as f:
+            json.dump({"action": "compass"}, f)
+        return {"success": True, "message": "Calibración iniciada. Gira el dron ahora."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "message": str(e)}
+
 
 @router.post("/calibration/home")
-async def calibrate_home():
+async def calibration_home():
+    import json
     try:
-        ctrl = get_mav_controller()
-        await asyncio.to_thread(ctrl.set_home_current)
-        return {"success": True, "message": "Posición Home configurada"}
+        with open("/tmp/motor_command.json", "w") as f:
+            json.dump({"action": "home"}, f)
+        return {"success": True, "message": "Home establecido en la ubicación actual."}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "message": str(e)}
+
 
 @router.post("/calibration/gps")
 async def verify_gps():
@@ -990,22 +993,13 @@ def _apply_rc_command(ctrl, throttle, yaw, pitch, roll) -> dict:
 
 @router.post("/command/arm")
 async def command_arm():
+    import json
     try:
-        # 1. Pausar el RC Override para que no interfiera con el armado
-        if hasattr(ctrl, 'rc_override') and ctrl.rc_override:
-            ctrl.rc_override.stop()
-        
-        # 2. Enviar comando de armar directo
-        success = ctrl.cmd.arm()
-        
-        return {"success": True, "message": "Dron armado", "armed": success}
+        with open("/tmp/motor_command.json", "w") as f:
+            json.dump({"action": "arm"}, f)
+        return {"success": True, "message": "Orden de armado enviada al demonio"}
     except Exception as e:
         return {"success": False, "message": str(e)}
-
-async def command_arm(request: CommandArmRequest):
-    # La app envía {"arm": true}; "force" solo si se especifica explícitamente.
-    force = bool(request.force)
-    return await arm_drone(ArmRequest(force=force))
 
 
 @router.post("/command/disarm")
