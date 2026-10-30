@@ -332,18 +332,6 @@ async def command_motor_test(request: MotorTestRequest):
 
 @router.post("/calibration/compass")
 async def calibrate_compass():
-    import subprocess
-    import asyncio
-    
-    process = await asyncio.create_subprocess_exec(
-        "/home/rasberry/Documents/drone/venv/bin/python3",
-        "/home/rasberry/Documents/drone/calibrate_compass_daemon.py"
-    )
-    await process.wait()
-    
-    return {"success": True, "message": "Calibración de brújula finalizada"}
-
-async def calibrate_compass():
     try:
         ctrl = get_mav_controller()
         await asyncio.to_thread(ctrl.calibrate_compass)

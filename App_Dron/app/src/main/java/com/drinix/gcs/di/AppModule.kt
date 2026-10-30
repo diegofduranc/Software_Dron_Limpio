@@ -31,9 +31,9 @@ object AppModule {
     ): OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(AuthInterceptor(session))
         .addInterceptor(HostRewriteInterceptor(session))
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(45, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 

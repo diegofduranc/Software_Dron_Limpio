@@ -53,34 +53,58 @@ object NetworkScanner {
         return formattedIp.substring(0, lastDot + 1)
     }
 
+    fun getAllSearchPrefixes(context: Context): List<String> {
+        val prefixes = mutableSetOf<String>()
+        getLocalIpPrefix(context)?.let { prefixes.add(it) }
+        // Common mobile hotspot subnets (Android AP, Xiaomi/MIUI, Samsung, Windows, Linux)
+        prefixes.add("192.168.43.")
+        prefixes.add("192.168.4.")
+        prefixes.add("192.168.12.")
+        prefixes.add("192.168.173.")
+        prefixes.add("10.42.0.")
+        return prefixes.toList()
+    }
+
     suspend fun scanForBackends(
-        prefix: String,
+        prefixes: List<String>,
         port: Int = DEFAULT_PORT,
         timeoutMs: Long = CONNECT_TIMEOUT_MS
     ): List<String> {
         return withContext(Dispatchers.IO) {
-            val found = mutableListOf<String>()
+            val found = java.util.Collections.synchronizedList(mutableListOf<String>())
             val semaphore = java.util.concurrent.Semaphore(MAX_CONCURRENT)
             val jobs = mutableListOf<kotlinx.coroutines.Job>()
 
-            for (i in 1 until 255) {
-                val ip = "$prefix$i"
-                semaphore.acquire()
-                val job = launch(Dispatchers.IO) {
-                    try {
-                        if (isBackendAlive(ip, port, timeoutMs.toInt())) {
-                            found.add(ip)
+            for (prefix in prefixes) {
+                for (i in 1 until 255) {
+                    val ip = "$prefix$i"
+                    semaphore.acquire()
+                    val job = launch(Dispatchers.IO) {
+                        try {
+                            if (isBackendAlive(ip, port, timeoutMs.toInt())) {
+                                if (!found.contains(ip)) {
+                                    found.add(ip)
+                                }
+                            }
+                        } finally {
+                            semaphore.release()
                         }
-                    } finally {
-                        semaphore.release()
                     }
+                    jobs += job
                 }
-                jobs += job
             }
 
             jobs.forEach { it.join() }
             found.sorted()
         }
+    }
+
+    suspend fun scanForBackends(
+        prefix: String,
+        port: Int = DEFAULT_PORT,
+        timeoutMs: Long = CONNECT_TIMEOUT_MS
+    ): List<String> {
+        return scanForBackends(listOf(prefix), port, timeoutMs)
     }
 
     private fun isBackendAlive(ip: String, port: Int, timeoutMs: Int): Boolean {

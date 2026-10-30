@@ -73,16 +73,16 @@ fun ScanDevicesDialog(
                             scanError = null
                             foundDevices = emptyList()
                             scope.launch {
-                                val prefix = NetworkScanner.getLocalIpPrefix(context)
-                                if (prefix == null) {
+                                val prefixes = NetworkScanner.getAllSearchPrefixes(context)
+                                if (prefixes.isEmpty()) {
                                     scanning = false
-                                    scanError = "No se pudo obtener la IP local del móvil. Asegúrate de estar conectado al WiFi."
+                                    scanError = "No se pudo obtener la red. Asegúrate de estar conectado al WiFi o Hotspot."
                                     return@launch
                                 }
-                                val found = NetworkScanner.scanForBackends(prefix)
+                                val found = NetworkScanner.scanForBackends(prefixes)
                                 scanning = false
                                 if (found.isEmpty()) {
-                                    scanError = "No se encontró ningún servidor en la red. Puedes escribir la IP manualmente."
+                                    scanError = "No se encontró ningún servidor en la red (Wi-Fi o Hotspot). Puedes escribir la IP manualmente."
                                 } else {
                                     foundDevices = found
                                 }
@@ -98,7 +98,7 @@ fun ScanDevicesDialog(
                                 color = MaterialTheme.colorScheme.onPrimary,
                             )
                         } else {
-                            Text("Escanear red")
+                            Text("Escanear red (Wi-Fi y Hotspot)")
                         }
                     }
                 }
@@ -107,15 +107,14 @@ fun ScanDevicesDialog(
 
                 if (scanning) {
                     Column(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        CircularProgressIndicator()
                         Text(
-                            "Escaneando red...",
+                            "Escaneando subredes de Wi-Fi y Hotspot...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp),
+                            textAlign = TextAlign.Center,
                         )
                     }
                 } else if (scanError != null) {
