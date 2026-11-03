@@ -188,13 +188,13 @@ class DroneTelemetry:
                     self.conn.update_msg_time()
                     mtype = msg.get_type()
                     if mtype == "COMMAND_ACK":
-                        print(f"[MAVLINK-DEBUG] COMMAND_ACK received: cmd={msg.command} result={msg.result}", flush=True)
+                        pass  # Log silenciado
                     elif mtype == "STATUSTEXT":
                         try:
                             text = msg.text.decode('utf-8', errors='replace') if isinstance(msg.text, bytes) else str(msg.text)
                         except Exception:
                             text = str(msg.text)
-                        print(f"[MAVLINK-DEBUG] STATUSTEXT: {text}", flush=True)
+                        pass  # Log silenciado
                         # Capturar mensajes PreArm/Arm para diagnóstico de ARM rechazado
                         text_lower = text.lower()
                         if "prearm" in text_lower or "arm" in text_lower:
@@ -211,7 +211,7 @@ class DroneTelemetry:
                                 self.conn._ekf_ready.set()
                                 logger.info("✅ EKF alignment detected from STATUS_REPORT (flags=0x%02x)", flags)
                     elif mtype not in ("VFR_HUD", "HEARTBEAT", "GPS_RAW_INT", "BATTERY_STATUS", "ATTITUDE", "LOCAL_POSITION_NED", "SYS_STATUS", "GLOBAL_POSITION_INT", "RAW_IMU"):
-                        print(f"[MAVLINK-DEBUG] Other msg: {mtype}", flush=True)
+                        pass  # Log silenciado
                     # Guardar COMMAND_ACK para wait_ack
                     if mtype == "COMMAND_ACK":
                         with self.conn._ack_lock:
