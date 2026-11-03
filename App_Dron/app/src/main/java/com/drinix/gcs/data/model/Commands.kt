@@ -8,6 +8,12 @@ data class CommandResponse(
     @SerializedName("message") val message: String,
 )
 
+/** Estado de calibración devuelto por GET /api/calibration/status. */
+data class CalibrationStatus(
+    @SerializedName("status") val status: String,
+    @SerializedName("message") val message: String,
+)
+
 data class ArmRequest(@SerializedName("arm") val arm: Boolean)
 
 data class TakeoffRequest(@SerializedName("altitude") val altitude: Double)

@@ -1,6 +1,7 @@
 package com.drinix.gcs.data
 
 import com.drinix.gcs.data.model.ArmRequest
+import com.drinix.gcs.data.model.CalibrationStatus
 import com.drinix.gcs.data.model.CommandResult
 import com.drinix.gcs.data.model.GotoRequest
 import com.drinix.gcs.data.model.MissionUploadRequest
@@ -51,6 +52,19 @@ class CommandRepository @Inject constructor(
         execute("Posición cero configurada") { api.calibrateHome() }
     suspend fun verifyGps() =
         execute("Estado GPS consultado") { api.verifyGps() }
+    suspend fun releaseRc() =
+        execute("Control RC liberado") { api.releaseRc() }
+    suspend fun getCalibrationStatus(): CalibrationStatus {
+        return try {
+            val resp = api.getCalibrationStatus()
+            val body = resp.body()
+            body ?: CalibrationStatus("error", "Sin respuesta del servidor")
+        } catch (e: IOException) {
+            CalibrationStatus("error", "Servidor inalcanzable")
+        } catch (e: Exception) {
+            CalibrationStatus("error", "Respuesta inesperada del servidor")
+        }
+    }
 
     private suspend fun execute(
         actionName: String,

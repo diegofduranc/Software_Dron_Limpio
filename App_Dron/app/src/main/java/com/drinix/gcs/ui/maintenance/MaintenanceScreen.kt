@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +28,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.drinix.gcs.data.model.CalibrationStatus
 import com.drinix.gcs.ui.DroneViewModel
 import com.drinix.gcs.ui.common.GcsTopBar
 
@@ -36,6 +39,7 @@ import com.drinix.gcs.ui.common.GcsTopBar
 @Composable
 fun MaintenanceScreen(viewModel: DroneViewModel, onBack: () -> Unit) {
     var confirmFullCalibration by remember { mutableStateOf(false) }
+    val calibration by viewModel.calibrationStatus.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize()) {
         GcsTopBar(title = "Mantenimiento", onBack = onBack)
@@ -95,11 +99,11 @@ fun MaintenanceScreen(viewModel: DroneViewModel, onBack: () -> Unit) {
     if (confirmFullCalibration) {
         AlertDialog(
             onDismissRequest = { confirmFullCalibration = false },
-            title = { Text("Calibrar todo el sistema") },
+            title = { Text("Calibración Integral", style = MaterialTheme.typography.titleLarge) },
             text = {
                 Text(
-                    "El dron debe estar desarmado y quieto. Se iniciará la calibración de giroscopio, "
-                        + "brújula y acelerómetro.",
+                    "El dron debe estar desarmado y en una superficie plana y quieta. Se iniciará la calibración de giroscopio, brújula y acelerómetro.",
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             },
             confirmButton = {
@@ -109,9 +113,59 @@ fun MaintenanceScreen(viewModel: DroneViewModel, onBack: () -> Unit) {
                 }) { Text("INICIAR") }
             },
             dismissButton = {
-                TextButton(onClick = { confirmFullCalibration = false }) { Text("Cancelar") }
+                TextButton(onClick = { confirmFullCalibration = false }) { Text("CANCELAR") }
             },
         )
+    }
+
+    // ── Diálogos de estado de calibración (polling) ──
+    val calib = calibration
+    when (calib?.status) {
+        "running" -> {
+            AlertDialog(
+                onDismissRequest = {},
+                title = { Text("Calibrando Sensores", style = MaterialTheme.typography.titleLarge) },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Text(
+                            calib.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        androidx.compose.material3.LinearProgressIndicator(
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                        )
+                        Text(
+                            "Proceso en curso... Mantenga el dron quieto.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {},
+            )
+        }
+        "success", "error" -> {
+            AlertDialog(
+                onDismissRequest = { viewModel.clearCalibrationStatus() },
+                title = { Text(if (calib.status == "success") "Calibración Exitosa" else "Error de Calibración", style = MaterialTheme.typography.titleLarge) },
+                text = {
+                    Text(
+                        calib.message,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.clearCalibrationStatus() }) { Text("ACEPTAR") }
+                },
+            )
+        }
+        else -> Unit
     }
 }
 
